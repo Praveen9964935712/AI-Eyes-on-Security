@@ -8,7 +8,7 @@
   "cameras": [
     {
       "id": 1,
-      "name": "Farm Gate A",
+      "name": "Local Webcam",
       "location": "Main Entrance",
       "url": "0",
       "type": "farm",
@@ -17,9 +17,9 @@
     },
     {
       "id": 2,
-      "name": "IP Camera Test",
-      "location": "Test Location",
-      "url": "http://192.168.1.100:8080/video",
+      "name": "IP Webcam Mobile",
+      "location": "Test Location", 
+      "url": "http://192.168.1.100:8080/videofeed",
       "type": "farm",
       "ai_model": "face_recognition",
       "enabled": false
