@@ -90,8 +90,13 @@ export const useApi = () => {
           }
         }
       } catch (error) {
-        console.log('Backend not available, using demo data');
+        console.log('Backend not available, clearing all data');
         setIsConnected(false);
+        // Clear all data when backend is not available
+        setAlerts([]);
+        setCameras([]);
+        setStats({});
+        setLogs([]);
       }
     };
 
