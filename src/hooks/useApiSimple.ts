@@ -57,16 +57,16 @@ export const useApi = () => {
     const fetchData = async () => {
       try {
         // Test connection to backend
-        const response = await fetch('http://localhost:8000/api/status');
+        const response = await fetch('http://localhost:5000/api/status');
         if (response.ok) {
           setIsConnected(true);
           
           // Fetch real data from backend
           const [alertsRes, camerasRes, statsRes, logsRes] = await Promise.all([
-            fetch('http://localhost:8000/api/alerts/list'),
-            fetch('http://localhost:8000/api/camera/list'),
-            fetch('http://localhost:8000/api/stats'),
-            fetch('http://localhost:8000/api/logs')
+            fetch('http://localhost:5000/api/alerts/list'),
+            fetch('http://localhost:5000/api/camera/list'),
+            fetch('http://localhost:5000/api/stats'),
+            fetch('http://localhost:5000/api/logs')
           ]);
 
           if (alertsRes.ok) {
@@ -104,7 +104,7 @@ export const useApi = () => {
 
   const refreshAlerts = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/alerts/list');
+      const response = await fetch('http://localhost:5000/api/alerts/list');
       if (response.ok) {
         const data = await response.json();
         setAlerts(data);
@@ -116,7 +116,7 @@ export const useApi = () => {
 
   const refreshCameras = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/camera/list');
+      const response = await fetch('http://localhost:5000/api/camera/list');
       if (response.ok) {
         const data = await response.json();
         setCameras(data);
@@ -128,7 +128,7 @@ export const useApi = () => {
 
   const refreshStats = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/stats');
+      const response = await fetch('http://localhost:5000/api/stats');
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -140,7 +140,7 @@ export const useApi = () => {
 
   const refreshLogs = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/logs');
+      const response = await fetch('http://localhost:5000/api/logs');
       if (response.ok) {
         const data = await response.json();
         setLogs(data);
@@ -152,7 +152,7 @@ export const useApi = () => {
 
   const acknowledgeAlert = async (alertId: number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/alerts/${alertId}/acknowledge`, {
+      const response = await fetch(`http://localhost:5000/api/alerts/${alertId}/acknowledge`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -175,7 +175,7 @@ export const useApi = () => {
 
   const dismissAlert = async (alertId: number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/alerts/${alertId}/dismiss`, {
+      const response = await fetch(`http://localhost:5000/api/alerts/${alertId}/dismiss`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -45,7 +45,7 @@ export default function LiveStreams({ cameras: propCameras }: LiveStreamsProps) 
     setIsSubmitting(true);
     try {
       // In a real system, this would make an API call to add the camera
-      const response = await fetch('http://localhost:8000/api/camera/add', {
+      const response = await fetch('http://localhost:5000/api/camera/add', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -92,7 +92,7 @@ export default function LiveStreams({ cameras: propCameras }: LiveStreamsProps) 
 
   const handleTakeSnapshot = async (cameraId: string | number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/camera/${cameraId}/snapshot`, {
+      const response = await fetch(`http://localhost:5000/api/camera/${cameraId}/snapshot`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -35,6 +35,23 @@ def create_app():
     socketio = SocketIO(app, cors_allowed_origins=["http://localhost:3000", "http://localhost:5173"])
     
     # Basic API routes
+    @app.route('/')
+    def index():
+        return {
+            'message': '🔍 AI Eyes Security System',
+            'status': 'online',
+            'version': '1.0.0',
+            'endpoints': {
+                'api_status': '/api/status',
+                'cameras': '/api/camera/list',
+                'alerts': '/api/alerts/list',
+                'stats': '/api/stats',
+                'logs': '/api/logs'
+            },
+            'frontend_url': 'http://localhost:5173',
+            'timestamp': datetime.now().isoformat()
+        }
+    
     @app.route('/api/status')
     def get_status():
         return {
