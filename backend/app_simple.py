@@ -34,6 +34,13 @@ def create_app():
     # Initialize SocketIO for real-time communication
     socketio = SocketIO(app, cors_allowed_origins=["http://localhost:3000", "http://localhost:5173"])
     
+    # Register protected camera routes
+    try:
+        from app.routes.camera_protected import camera_bp
+        app.register_blueprint(camera_bp, url_prefix='/api/v2')
+    except ImportError as e:
+        print(f"Warning: Could not import protected camera routes: {e}")
+    
     # Basic API routes
     @app.route('/')
     def index():
@@ -254,6 +261,48 @@ def create_app():
             
         except Exception as e:
             return {'error': str(e)}, 500
+    
+    @app.route('/api/camera/test-url', methods=['POST'])
+    def test_camera_url():
+        """Test if a camera URL is accessible"""
+        try:
+            data = request.get_json()
+            url = data.get('url')
+            
+            if not url:
+                return {'error': 'URL is required'}, 400
+            
+            import requests
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            
+            # Configure session with timeout and retries
+            session = requests.Session()
+            retry_strategy = Retry(
+                total=1,
+                backoff_factor=0.5,
+                status_forcelist=[500, 502, 503, 504]
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            session.mount("http://", adapter)
+            session.mount("https://", adapter)
+            
+            # Test the URL
+            response = session.head(url, timeout=5)
+            
+            return {
+                'success': True,
+                'status_code': response.status_code,
+                'content_type': response.headers.get('content-type', ''),
+                'accessible': response.status_code == 200
+            }
+            
+        except requests.exceptions.Timeout:
+            return {'success': False, 'error': 'Connection timeout'}, 408
+        except requests.exceptions.ConnectionError:
+            return {'success': False, 'error': 'Connection failed'}, 503
+        except Exception as e:
+            return {'success': False, 'error': str(e)}, 500
     
     @app.route('/api/logs')
     def get_logs():

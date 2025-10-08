@@ -134,7 +134,7 @@ class CameraModel(BaseModel):
         super().__init__(CAMERAS_COLLECTION)
     
     def create_camera(self, name: str, location: str, url: str, camera_type: str, 
-                     username: str = "", password: str = "") -> str:
+                     username: str = "", password: str = "", enabled: bool = True) -> str:
         """Create a new camera"""
         camera_data = {
             'name': name,
@@ -143,6 +143,7 @@ class CameraModel(BaseModel):
             'type': camera_type,
             'username': username,
             'password': password,
+            'enabled': enabled,
             'status': 'online',
             'last_seen': datetime.utcnow(),
             'recording': False,
@@ -155,6 +156,10 @@ class CameraModel(BaseModel):
             camera_data['id'] = len(self._fallback_storage) + 1
         
         return self.insert_one(camera_data)
+    
+    def update_camera(self, camera_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update camera with provided data"""
+        return self.update_by_id(camera_id, update_data)
     
     def get_online_cameras(self) -> List[Dict[str, Any]]:
         """Get all online cameras"""

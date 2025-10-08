@@ -30,15 +30,27 @@ interface StatsCardsProps {
   alerts: Alert[];
   logs: Log[];
   stats?: Stats;
+  isConnected?: boolean;  // Add isConnected prop
 }
 
-export default function StatsCards({ alerts, logs, stats }: StatsCardsProps) {
+export default function StatsCards({ alerts, logs, stats, isConnected = true }: StatsCardsProps) {
   const highSeverityAlerts = alerts.filter(alert => alert.severity === 'high').length;
   const recentLogs = logs.filter(log => {
     const logTime = new Date(log.timestamp).getTime();
     const oneHourAgo = Date.now() - (60 * 60 * 1000);
     return logTime > oneHourAgo;
   }).length;
+
+  // When disconnected, show 0 or N/A instead of fallback values
+  const getDisplayValue = (value: any, fallback: any = '0') => {
+    if (!isConnected) return '0';
+    return value !== undefined ? value : fallback;
+  };
+
+  const getDisplayPercentage = (value: any, fallback: any = '0') => {
+    if (!isConnected) return '0';
+    return value !== undefined ? value : fallback;
+  };
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-6 sm:mb-8">
@@ -47,15 +59,15 @@ export default function StatsCards({ alerts, logs, stats }: StatsCardsProps) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Active Cameras</p>
-            <p className="text-xl sm:text-3xl font-bold text-gray-900">{stats?.active_cameras || 5}</p>
-            <p className="text-xs text-green-600 mt-1">
+            <p className="text-xl sm:text-3xl font-bold text-gray-900">{getDisplayValue(stats?.active_cameras, 0)}</p>
+            <p className={`text-xs mt-1 ${isConnected ? 'text-green-600' : 'text-gray-500'}`}>
               <i className="ri-arrow-up-line mr-1"></i>
-              <span className="hidden sm:inline">All systems operational</span>
-              <span className="sm:hidden">Online</span>
+              <span className="hidden sm:inline">{isConnected ? 'All systems operational' : 'System offline'}</span>
+              <span className="sm:hidden">{isConnected ? 'Online' : 'Offline'}</span>
             </p>
           </div>
-          <div className="w-8 h-8 sm:w-12 sm:h-12 bg-green-100 rounded-lg flex items-center justify-center">
-            <i className="ri-camera-line text-green-600 text-lg sm:text-2xl"></i>
+          <div className={`w-8 h-8 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center ${isConnected ? 'bg-green-100' : 'bg-gray-100'}`}>
+            <i className={`ri-camera-line text-lg sm:text-2xl ${isConnected ? 'text-green-600' : 'text-gray-400'}`}></i>
           </div>
         </div>
       </div>
@@ -66,14 +78,14 @@ export default function StatsCards({ alerts, logs, stats }: StatsCardsProps) {
           <div>
             <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Active Alerts</p>
             <p className="text-xl sm:text-3xl font-bold text-gray-900">{alerts.length}</p>
-            <p className="text-xs text-red-600 mt-1">
+            <p className={`text-xs mt-1 ${isConnected ? 'text-red-600' : 'text-gray-500'}`}>
               <i className="ri-alert-line mr-1"></i>
-              <span className="hidden sm:inline">{highSeverityAlerts} high priority</span>
-              <span className="sm:hidden">{highSeverityAlerts} high</span>
+              <span className="hidden sm:inline">{isConnected ? `${highSeverityAlerts} high priority` : 'No data'}</span>
+              <span className="sm:hidden">{isConnected ? `${highSeverityAlerts} high` : 'N/A'}</span>
             </p>
           </div>
-          <div className="w-8 h-8 sm:w-12 sm:h-12 bg-red-100 rounded-lg flex items-center justify-center">
-            <i className="ri-alarm-warning-line text-red-600 text-lg sm:text-2xl"></i>
+          <div className={`w-8 h-8 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center ${isConnected ? 'bg-red-100' : 'bg-gray-100'}`}>
+            <i className={`ri-alarm-warning-line text-lg sm:text-2xl ${isConnected ? 'text-red-600' : 'text-gray-400'}`}></i>
           </div>
         </div>
       </div>
@@ -83,15 +95,15 @@ export default function StatsCards({ alerts, logs, stats }: StatsCardsProps) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Detection Rate</p>
-            <p className="text-xl sm:text-3xl font-bold text-gray-900">{stats?.detection_accuracy || 97.5}%</p>
-            <p className="text-xs text-blue-600 mt-1">
+            <p className="text-xl sm:text-3xl font-bold text-gray-900">{getDisplayPercentage(stats?.detection_accuracy, 0)}%</p>
+            <p className={`text-xs mt-1 ${isConnected ? 'text-blue-600' : 'text-gray-500'}`}>
               <i className="ri-line-chart-line mr-1"></i>
-              <span className="hidden sm:inline">Excellent performance</span>
-              <span className="sm:hidden">Excellent</span>
+              <span className="hidden sm:inline">{isConnected ? 'Excellent performance' : 'No data available'}</span>
+              <span className="sm:hidden">{isConnected ? 'Excellent' : 'N/A'}</span>
             </p>
           </div>
-          <div className="w-8 h-8 sm:w-12 sm:h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-            <i className="ri-radar-line text-blue-600 text-lg sm:text-2xl"></i>
+          <div className={`w-8 h-8 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center ${isConnected ? 'bg-blue-100' : 'bg-gray-100'}`}>
+            <i className={`ri-radar-line text-lg sm:text-2xl ${isConnected ? 'text-blue-600' : 'text-gray-400'}`}></i>
           </div>
         </div>
       </div>
@@ -102,14 +114,14 @@ export default function StatsCards({ alerts, logs, stats }: StatsCardsProps) {
           <div>
             <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Recent Events</p>
             <p className="text-xl sm:text-3xl font-bold text-gray-900">{recentLogs}</p>
-            <p className="text-xs text-purple-600 mt-1">
+            <p className={`text-xs mt-1 ${isConnected ? 'text-purple-600' : 'text-gray-500'}`}>
               <i className="ri-time-line mr-1"></i>
-              <span className="hidden sm:inline">Last hour</span>
-              <span className="sm:hidden">1hr</span>
+              <span className="hidden sm:inline">{isConnected ? 'Last hour' : 'No data'}</span>
+              <span className="sm:hidden">{isConnected ? '1hr' : 'N/A'}</span>
             </p>
           </div>
-          <div className="w-8 h-8 sm:w-12 sm:h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-            <i className="ri-file-list-3-line text-purple-600 text-lg sm:text-2xl"></i>
+          <div className={`w-8 h-8 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center ${isConnected ? 'bg-purple-100' : 'bg-gray-100'}`}>
+            <i className={`ri-file-list-3-line text-lg sm:text-2xl ${isConnected ? 'text-purple-600' : 'text-gray-400'}`}></i>
           </div>
         </div>
       </div>

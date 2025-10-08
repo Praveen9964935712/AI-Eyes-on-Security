@@ -36,7 +36,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <StatsCards alerts={alerts} logs={logs} stats={stats} />
+        <StatsCards alerts={alerts} logs={logs} stats={stats} isConnected={isConnected} />
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-4 sm:mb-6">
           <div className="border-b border-gray-200 overflow-x-auto">

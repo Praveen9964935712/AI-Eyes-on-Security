@@ -1,5 +1,6 @@
 
 import { useState } from 'react';
+import ProtectedCameraManager from './ProtectedCameraManager';
 
 interface Camera {
   id: string | number;  // Support both MongoDB ObjectId (string) and simple IDs (number)
@@ -19,6 +20,7 @@ export default function LiveStreams({ cameras: propCameras }: LiveStreamsProps) 
   const [showFullscreenModal, setShowFullscreenModal] = useState(false);
   const [fullscreenCamera, setFullscreenCamera] = useState<Camera | null>(null);
   const [showAddCameraModal, setShowAddCameraModal] = useState(false);
+  const [showProtectedManager, setShowProtectedManager] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newCamera, setNewCamera] = useState({
     name: '',
@@ -162,15 +164,44 @@ export default function LiveStreams({ cameras: propCameras }: LiveStreamsProps) 
             {/* Main video area */}
             <div className="flex-1 flex items-center justify-center bg-black">
               {fullscreenCamera.url && fullscreenCamera.url !== '0' ? (
-                <iframe
-                  src={fullscreenCamera.url}
-                  className="w-full h-full max-w-6xl max-h-[80vh] border-0"
-                  title={`${fullscreenCamera.name} Live Stream`}
-                  allow="camera; microphone"
-                  onError={() => {
-                    console.log('Stream failed to load');
-                  }}
-                />
+                <div className="relative w-full h-full max-w-6xl max-h-[80vh]">
+                  <img
+                    src={fullscreenCamera.url.includes('video') ? fullscreenCamera.url : `${fullscreenCamera.url}/video`}
+                    className="w-full h-full object-contain"
+                    alt={`${fullscreenCamera.name} Live Stream`}
+                    onError={(e) => {
+                      const img = e.target as HTMLImageElement;
+                      const originalUrl = fullscreenCamera.url;
+                      
+                      if (originalUrl && img.src.includes('/video')) {
+                        img.src = originalUrl.includes('videofeed') ? originalUrl : `${originalUrl}/videofeed`;
+                      } else if (originalUrl && img.src.includes('/videofeed')) {
+                        img.src = originalUrl.includes('shot.jpg') ? originalUrl : `${originalUrl}/shot.jpg`;
+                      } else {
+                        img.style.display = 'none';
+                        const placeholder = img.nextElementSibling as HTMLDivElement;
+                        if (placeholder) placeholder.style.display = 'flex';
+                      }
+                    }}
+                    onLoad={(e) => {
+                      const img = e.target as HTMLImageElement;
+                      if (img.src.includes('shot.jpg')) {
+                        setTimeout(() => {
+                          const url = new URL(img.src);
+                          url.searchParams.set('t', Date.now().toString());
+                          img.src = url.toString();
+                        }, 1000); // Faster refresh for fullscreen
+                      }
+                    }}
+                  />
+                  
+                  {/* Fallback placeholder */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-white hidden">
+                    <i className="ri-camera-off-line text-6xl mb-4 text-gray-400"></i>
+                    <h3 className="text-xl mb-2">Camera Stream Unavailable</h3>
+                    <p className="text-gray-400">Check camera URL: {fullscreenCamera.url}</p>
+                  </div>
+                </div>
               ) : (
                 <div className="text-center text-white">
                   <i className="ri-camera-off-line text-6xl mb-4 text-gray-400"></i>
@@ -345,6 +376,14 @@ export default function LiveStreams({ cameras: propCameras }: LiveStreamsProps) 
             <span className="hidden sm:inline">Add Camera</span>
             <span className="sm:hidden">Add</span>
           </button>
+          <button 
+            onClick={() => setShowProtectedManager(true)}
+            className="px-3 sm:px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm whitespace-nowrap"
+          >
+            <i className="ri-shield-user-line mr-1 sm:mr-2"></i>
+            <span className="hidden sm:inline">Admin Panel</span>
+            <span className="sm:hidden">Admin</span>
+          </button>
           <button className="px-3 sm:px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm whitespace-nowrap">
             <i className="ri-settings-3-line mr-1 sm:mr-2"></i>
             <span className="hidden sm:inline">Settings</span>
@@ -359,34 +398,63 @@ export default function LiveStreams({ cameras: propCameras }: LiveStreamsProps) 
           {cameras.map((camera) => (
             <div key={camera.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
               <div className="relative">
-                {/* For IP webcams, show the live stream URL or a placeholder */}
+                {/* Live video stream display */}
                 {camera.url && camera.url !== '0' ? (
-                  <iframe
-                    src={camera.url}
-                    className="w-full h-40 sm:h-48 object-cover"
-                    title={`${camera.name} Live Stream`}
-                    onError={(e) => {
-                      // Fallback to placeholder if stream fails
-                      const target = e.target as HTMLIFrameElement;
-                      target.style.display = 'none';
-                      const placeholder = target.nextElementSibling as HTMLDivElement;
-                      if (placeholder) placeholder.style.display = 'flex';
-                    }}
-                  />
+                  <div className="w-full h-40 sm:h-48 bg-black relative">
+                    {/* Try different stream formats for IP Webcam */}
+                    <img
+                      src={camera.url.includes('video') ? camera.url : `${camera.url}/video`}
+                      className="w-full h-full object-cover"
+                      alt={`${camera.name} Live Stream`}
+                      onError={(e) => {
+                        // Try alternative URL formats
+                        const img = e.target as HTMLImageElement;
+                        const originalUrl = camera.url;
+                        
+                        if (originalUrl && img.src.includes('/video')) {
+                          // Try /videofeed
+                          img.src = originalUrl.includes('videofeed') ? originalUrl : `${originalUrl}/videofeed`;
+                        } else if (originalUrl && img.src.includes('/videofeed')) {
+                          // Try /shot.jpg for still images
+                          img.src = originalUrl.includes('shot.jpg') ? originalUrl : `${originalUrl}/shot.jpg`;
+                        } else {
+                          // Show error placeholder
+                          img.style.display = 'none';
+                          const placeholder = img.nextElementSibling as HTMLDivElement;
+                          if (placeholder) placeholder.style.display = 'flex';
+                        }
+                      }}
+                      onLoad={(e) => {
+                        // If it's a still image (shot.jpg), refresh it every 2 seconds for live effect
+                        const img = e.target as HTMLImageElement;
+                        if (img.src.includes('shot.jpg')) {
+                          setTimeout(() => {
+                            const url = new URL(img.src);
+                            url.searchParams.set('t', Date.now().toString());
+                            img.src = url.toString();
+                          }, 2000);
+                        }
+                      }}
+                    />
+                    
+                    {/* Fallback placeholder for failed streams */}
+                    <div 
+                      className="absolute inset-0 bg-gray-200 flex-col items-center justify-center hidden"
+                      style={{ display: 'none' }}
+                    >
+                      <i className="ri-camera-off-line text-gray-400 text-3xl mb-2"></i>
+                      <span className="text-gray-500 text-sm">Stream Unavailable</span>
+                      <span className="text-gray-400 text-xs mt-1">Check camera URL</span>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="w-full h-40 sm:h-48 bg-gray-200 flex items-center justify-center">
-                    <i className="ri-camera-line text-gray-400 text-3xl"></i>
+                  // Local webcam placeholder
+                  <div className="w-full h-40 sm:h-48 bg-gray-200 flex flex-col items-center justify-center">
+                    <i className="ri-camera-line text-gray-400 text-3xl mb-2"></i>
+                    <span className="text-gray-500 text-sm">Local Webcam</span>
+                    <span className="text-gray-400 text-xs">Use Admin Panel to configure</span>
                   </div>
                 )}
-                
-                {/* Fallback placeholder for failed streams */}
-                <div 
-                  className="w-full h-40 sm:h-48 bg-gray-200 flex-col items-center justify-center hidden"
-                  style={{ display: 'none' }}
-                >
-                  <i className="ri-camera-off-line text-gray-400 text-3xl mb-2"></i>
-                  <span className="text-gray-500 text-sm">Stream Unavailable</span>
-                </div>
 
                 <div className={`absolute top-2 sm:top-3 right-2 sm:right-3 px-2 py-1 rounded text-xs font-medium ${
                   camera.status === 'online' 
@@ -501,6 +569,11 @@ export default function LiveStreams({ cameras: propCameras }: LiveStreamsProps) 
           </button>
         </div>
       </div>
+      
+      {/* Protected Camera Manager */}
+      {showProtectedManager && (
+        <ProtectedCameraManager onClose={() => setShowProtectedManager(false)} />
+      )}
     </div>
   );
 }
