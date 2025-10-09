@@ -41,6 +41,13 @@ def create_app():
     except ImportError as e:
         print(f"Warning: Could not import protected camera routes: {e}")
     
+    # Register surveillance routes
+    try:
+        from app.routes.surveillance_api import surveillance_bp
+        app.register_blueprint(surveillance_bp, url_prefix='/api')
+    except ImportError as e:
+        print(f"Warning: Could not import surveillance routes: {e}")
+    
     # Basic API routes
     @app.route('/')
     def index():
