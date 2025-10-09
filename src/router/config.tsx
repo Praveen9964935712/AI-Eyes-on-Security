@@ -6,6 +6,8 @@ import Login from "../pages/login/page";
 import Dashboard from "../pages/dashboard/page";
 import Profile from "../pages/profile/page";
 import Settings from "../pages/settings/page";
+import SurveillanceDashboard from "../pages/surveillance/SurveillanceDashboard";
+import SurveillanceConfig from "../pages/surveillance/SurveillanceConfig";
 
 const routes: RouteObject[] = [
   {
@@ -19,6 +21,14 @@ const routes: RouteObject[] = [
   {
     path: "/dashboard",
     element: <Dashboard />,
+  },
+  {
+    path: "/surveillance",
+    element: <SurveillanceDashboard />,
+  },
+  {
+    path: "/surveillance/config",
+    element: <SurveillanceConfig />,
   },
   {
     path: "/profile",

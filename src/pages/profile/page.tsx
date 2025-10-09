@@ -10,14 +10,14 @@ export default function Profile() {
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   
   const [profileData, setProfileData] = useState({
-    firstName: 'John',
-    lastName: 'Smith',
-    email: 'john.smith@company.com',
-    phone: '+1 (555) 123-4567',
+    firstName: 'Basava',
+    lastName: '',
+    email: 'basava@gmail.com',
+    phone: '+91 79750 04074',
     department: 'Security Operations',
     role: 'Security Administrator',
     location: 'Main Office',
-    timezone: 'America/New_York',
+    timezone: 'Hospete',
     language: 'English',
     avatar: 'https://readdy.ai/api/search-image?query=professional%20security%20administrator%20headshot%20portrait%2C%20business%20professional%20photo%2C%20clean%20background%2C%20realistic%20corporate%20style&width=200&height=200&seq=avatar1&orientation=squarish'
   });
@@ -57,7 +57,7 @@ export default function Profile() {
       timestamp: new Date().toISOString(),
       ipAddress: '192.168.1.100',
       device: 'Chrome on Windows',
-      location: 'New York, NY'
+      location: 'Ballari, India'
     },
     {
       id: 2,
@@ -65,7 +65,7 @@ export default function Profile() {
       timestamp: new Date(Date.now() - 300000).toISOString(),
       ipAddress: '192.168.1.100',
       device: 'Chrome on Windows',
-      location: 'New York, NY'
+      location: 'Ballari, India'
     },
     {
       id: 3,
@@ -73,7 +73,7 @@ export default function Profile() {
       timestamp: new Date(Date.now() - 600000).toISOString(),
       ipAddress: '192.168.1.100',
       device: 'Chrome on Windows',
-      location: 'New York, NY'
+      location: 'Ballari, India'
     }
   ]);
 
