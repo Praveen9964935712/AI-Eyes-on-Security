@@ -16,6 +16,7 @@ export default function Dashboard() {
     logs,
     isConnected,
     refreshAlerts,
+    refreshCameras,
     refreshLogs,
     acknowledgeAlert, 
     dismissAlert 
@@ -127,7 +128,7 @@ export default function Dashboard() {
           </div>
 
           <div className="p-3 sm:p-6">
-            {activeTab === 'live' && <LiveStreams cameras={cameras} />}
+            {activeTab === 'live' && <LiveStreams cameras={cameras} onRefreshCameras={refreshCameras} />}
             {activeTab === 'alerts' && (
               <AlertsPanel 
                 alerts={alerts} 

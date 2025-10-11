@@ -37,8 +37,11 @@ class MultiCameraAISurveillance:
         self.alert_count = 0
         self.detection_stats = {}
         
-        # AI Components
-        self.detector = YOLOv9Detector(conf_threshold=0.25)  # Lower threshold for better detection
+        # AI Components - Optimized for ULTRA performance with minimal lag
+        self.detector = YOLOv9Detector(
+            conf_threshold=0.4,   # Higher threshold for faster processing and less noise
+            device='cpu'          # Ensure CPU usage for stability
+        )
         
         print(f"🔍 Multi-Camera AI Surveillance System Initialized")
         print(f"📹 Found {len(self.camera_urls)} live cameras")
@@ -408,11 +411,12 @@ class MultiCameraAISurveillance:
                     fps_counter = 0
                     last_fps_time = current_time
                 
-                # AI Processing
+                # AI Processing (optimized timing)
                 processed_data = self.process_frame_ai(frame, camera_name, frame_count)
                 
                 # Update stats
-                self.detection_stats[camera_name]['total_detections'] += len(processed_data.get('detections', []))
+                if 'detections' in processed_data:
+                    self.detection_stats[camera_name]['total_detections'] += len(processed_data['detections'])
                 
                 # Store latest frame data
                 self.latest_frames[camera_name] = processed_data
@@ -420,7 +424,8 @@ class MultiCameraAISurveillance:
                 # Log activities
                 self.log_activities(processed_data, camera_name)
                 
-                time.sleep(0.033)  # ~30 FPS
+                # ULTRA increased sleep for maximum performance balance (3 FPS AI processing)
+                time.sleep(0.33)  # ~3 FPS for AI processing to eliminate lag spikes
                 
             except Exception as e:
                 print(f"Camera error {camera_name}: {e}")
@@ -430,9 +435,32 @@ class MultiCameraAISurveillance:
         print(f"🛑 Stopped surveillance for {camera_name}")
     
     def process_frame_ai(self, frame, camera_name, frame_count):
-        """AI processing pipeline for each camera"""
-        # Object Detection
-        detections = self.detector.detect(frame)
+        """AI processing pipeline for each camera - Performance Optimized"""
+        
+        # ULTRA Performance optimization: Skip even more frames to eliminate lag (process every 10th frame)
+        if frame_count % 10 != 0:
+            # Return cached detection data for skipped frames
+            if camera_name in self.latest_frames:
+                cached_data = self.latest_frames[camera_name].copy()
+                cached_data['annotated_frame'] = self.create_annotated_frame(
+                    frame, cached_data.get('detections', []), 
+                    cached_data.get('activities', []), camera_name
+                )
+                return cached_data
+        
+        # Resize frame for ULTRA fast processing (reduce resolution even more)
+        height, width = frame.shape[:2]
+        small_frame = cv2.resize(frame, (int(width * 0.3), int(height * 0.3)))
+        
+        # Object Detection on much smaller frame
+        detections = self.detector.detect(small_frame)
+        
+        # Scale detection coordinates back to original frame size (adjusted for 0.3 scale)
+        for detection in detections:
+            bbox = detection['bbox']
+            detection['bbox'] = [int(bbox[0] * 3.33), int(bbox[1] * 3.33), 
+                               int(bbox[2] * 3.33), int(bbox[3] * 3.33)]
+        
         persons = self.detector.filter_persons(detections)
         weapons = self.detector.filter_weapons(detections)
         bags = self.detector.filter_bags(detections)

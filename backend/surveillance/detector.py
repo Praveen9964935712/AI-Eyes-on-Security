@@ -134,8 +134,8 @@ class YOLOv9Detector:
             return []
         
         try:
-            # Run inference
-            results = self.model(frame)
+            # Run inference with verbose output enabled to see detections
+            results = self.model(frame, verbose=True, conf=self.conf_threshold, max_det=20)
             
             # Parse results
             detections = []

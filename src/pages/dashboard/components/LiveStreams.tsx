@@ -14,9 +14,10 @@ interface Camera {
 
 interface LiveStreamsProps {
   cameras?: Camera[];
+  onRefreshCameras?: () => Promise<void>;
 }
 
-export default function LiveStreams({ cameras: propCameras }: LiveStreamsProps) {
+export default function LiveStreams({ cameras: propCameras, onRefreshCameras }: LiveStreamsProps) {
   const [showFullscreenModal, setShowFullscreenModal] = useState(false);
   const [fullscreenCamera, setFullscreenCamera] = useState<Camera | null>(null);
   const [showAddCameraModal, setShowAddCameraModal] = useState(false);
@@ -67,7 +68,10 @@ export default function LiveStreams({ cameras: propCameras }: LiveStreamsProps) 
           username: '',
           password: ''
         });
-        // You could call a refresh function here if available
+        // Refresh the camera list to show the new camera immediately
+        if (onRefreshCameras) {
+          await onRefreshCameras();
+        }
       } else {
         const error = await response.json();
         alert(`Failed to add camera: ${error.error || 'Unknown error'}`);
@@ -546,29 +550,6 @@ export default function LiveStreams({ cameras: propCameras }: LiveStreamsProps) 
           </button>
         </div>
       )}
-
-      {/* Add Camera Card */}
-      <div className="mt-4 sm:mt-6">
-        <div 
-          onClick={handleAddCamera}
-          className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-6 sm:p-12 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer"
-        >
-          <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
-            <i className="ri-add-line text-gray-400 text-xl sm:text-2xl"></i>
-          </div>
-          <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">Add New Camera</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Connect IP cameras, webcams, or mobile devices to expand your surveillance network
-          </p>
-          <button 
-            onClick={(e) => { e.stopPropagation(); handleAddCamera(); }}
-            className="px-4 sm:px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm sm:text-base whitespace-nowrap"
-          >
-            <i className="ri-camera-line mr-1 sm:mr-2"></i>
-            Add Camera
-          </button>
-        </div>
-      </div>
       
       {/* Protected Camera Manager */}
       {showProtectedManager && (
