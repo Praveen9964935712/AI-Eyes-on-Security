@@ -78,12 +78,14 @@ class LBPHFaceRecognizer:
             # Convert to grayscale
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
-            # Detect faces
+            # Detect faces with strict parameters to prevent false positives
             faces = self.face_cascade.detectMultiScale(
                 gray,
                 scaleFactor=scale_factor,
                 minNeighbors=min_neighbors,
-                minSize=(50, 50)  # Minimum face size
+                minSize=(40, 40),  # Much larger minimum face size - more realistic
+                maxSize=(300, 300),  # Maximum face size to prevent false detections
+                flags=cv2.CASCADE_SCALE_IMAGE  # Additional flag for better detection
             )
             
             return [(int(x), int(y), int(w), int(h)) for x, y, w, h in faces]
@@ -176,6 +178,14 @@ class LBPHFaceRecognizer:
         
         for face_bbox in faces:
             x, y, w, h = face_bbox
+            
+            # Validate face size - reject tiny or unrealistic detections
+            if w < 50 or h < 50:  # Minimum realistic face size
+                continue
+            if w > 400 or h > 400:  # Maximum realistic face size
+                continue
+            if w/h > 2 or h/w > 2:  # Reject non-square-ish detections (likely false positives)
+                continue
             
             # Extract face crop
             face_crop = self.extract_face_crop(frame, face_bbox)

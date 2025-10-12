@@ -14,9 +14,15 @@ import requests
 from datetime import datetime
 from flask import Flask, jsonify, Response, render_template_string
 import json
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 sys.path.append('.')
 from surveillance.detector import YOLOv9Detector
+from surveillance.face_recognition import LBPHFaceRecognizer
+from app.services.alert_manager import AlertManager
 
 class MultiCameraAISurveillance:
     """
@@ -26,6 +32,9 @@ class MultiCameraAISurveillance:
     
     def __init__(self):
         self.app = Flask(__name__)
+        
+        # Initialize Alert Manager with SendGrid integration
+        self.alert_manager = AlertManager(socketio=None)  # No WebSocket for multi-camera system
         
         # Auto-detect your IP cameras
         self.camera_urls = self.auto_detect_cameras()
@@ -37,14 +46,22 @@ class MultiCameraAISurveillance:
         self.alert_count = 0
         self.detection_stats = {}
         
+        # Frame processing counters for optimization
+        self.frame_counters = {}  # Track frame numbers per camera
+        
         # AI Components - Optimized for ULTRA performance with minimal lag
         self.detector = YOLOv9Detector(
             conf_threshold=0.4,   # Higher threshold for faster processing and less noise
             device='cpu'          # Ensure CPU usage for stability
         )
         
+        # Face Recognition for Farm Security
+        self.face_recognizer = LBPHFaceRecognizer(known_faces_dir="data/known_faces")
+        print(f"👤 Face Recognition: {'✅ Model trained' if self.face_recognizer.is_trained else '⚠️ Training required'}")
+        
         print(f"🔍 Multi-Camera AI Surveillance System Initialized")
         print(f"📹 Found {len(self.camera_urls)} live cameras")
+        print(f"🚨 SendGrid Email Alerts: {'✅ Enabled' if self.alert_manager.email_service.enabled else '❌ Disabled'}")
         
         self.setup_flask_routes()
     
@@ -323,6 +340,56 @@ class MultiCameraAISurveillance:
             except Exception as e:
                 return jsonify({'success': False, 'message': f'Error: {str(e)}'})
         
+        @self.app.route('/api/email/status', methods=['GET'])
+        def api_email_status():
+            """Get email service configuration status"""
+            try:
+                status = self.alert_manager.get_alert_stats()
+                return jsonify({
+                    'success': True,
+                    'email_status': status['email_service_status'],
+                    'alert_stats': {
+                        'total_alerts': status['total_alerts'],
+                        'alerts_by_type': status['alerts_by_type'],
+                        'alerts_by_severity': status['alerts_by_severity']
+                    }
+                })
+            except Exception as e:
+                return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+        
+        @self.app.route('/api/email/test', methods=['POST'])
+        def api_test_email():
+            """Send test email to verify SendGrid configuration"""
+            try:
+                success = self.alert_manager.test_email_system()
+                if success:
+                    return jsonify({
+                        'success': True, 
+                        'message': '✅ Test email sent successfully! Check your inbox.',
+                        'service': 'SendGrid'
+                    })
+                else:
+                    return jsonify({
+                        'success': False, 
+                        'message': '❌ Failed to send test email. Check your SendGrid configuration.',
+                        'service': 'SendGrid'
+                    })
+            except Exception as e:
+                return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+        
+        @self.app.route('/api/alerts/recent', methods=['GET'])
+        def api_recent_alerts():
+            """Get recent alert history"""
+            try:
+                stats = self.alert_manager.get_alert_stats()
+                return jsonify({
+                    'success': True,
+                    'recent_alerts': stats['recent_alerts'],
+                    'total_count': stats['total_alerts']
+                })
+            except Exception as e:
+                return jsonify({'success': False, 'message': f'Error: {str(e)}'})
+        
         @self.app.route('/api/start/<camera_name>', methods=['POST'])
         def api_start_camera(camera_name):
             """Start surveillance on specific camera"""
@@ -467,33 +534,189 @@ class MultiCameraAISurveillance:
         
         activities = []
         
-        # Activity Analysis
+        # Activity Analysis with SendGrid Email Alerts
         person_count = len(persons)
         
-        # Suspicious activity detection
+        # Suspicious activity detection with email alerts
         if weapons:
-            activities.append({
+            # Save weapon detection snapshot
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            snapshot_filename = f"weapon_{camera_name}_{timestamp}.jpg"
+            snapshot_path = os.path.join("storage", "snapshots", snapshot_filename)
+            
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
+            
+            # Save the full frame as snapshot
+            cv2.imwrite(snapshot_path, frame)
+            
+            activity = {
                 'type': 'weapon',
                 'description': f'WEAPON DETECTED: {weapons[0]["class_name"]}',
                 'severity': 'critical',
                 'bbox': weapons[0]['bbox']
-            })
+            }
+            activities.append(activity)
+            
+            # Send immediate weapon detection alert with snapshot
+            self.alert_manager.send_weapon_detection_alert(
+                weapon_type=weapons[0]["class_name"],
+                camera_id=camera_name,
+                confidence=weapons[0]['confidence'],
+                image_path=snapshot_path
+            )
+            self.alert_count += 1
+            print(f"🚨 CRITICAL ALERT [Camera_{camera_name}]: WEAPON DETECTED: {weapons[0]['class_name']}")
+            print(f"📸 Weapon snapshot saved: {snapshot_path}")
         
+        # Face Recognition for Farm Security (run when person detected OR every 5th frame)
+        authorized_persons_present = False  # Track if authorized persons are detected
+        print(f"🔧 DEBUG: Face recognizer trained: {self.face_recognizer.is_trained}")
+        if self.face_recognizer.is_trained:
+            # Initialize frame counter for this camera if not exists
+            if camera_name not in self.frame_counters:
+                self.frame_counters[camera_name] = 0
+            
+            self.frame_counters[camera_name] += 1
+            print(f"🔧 DEBUG: Frame counter for {camera_name}: {self.frame_counters[camera_name]}")
+            
+            # Run face recognition when person is detected OR every 5th frame
+            run_face_recognition = False
+            if person_count > 0:
+                run_face_recognition = True
+                print(f"🔧 DEBUG: Running face detection - person detected on frame {self.frame_counters[camera_name]}")
+            elif self.frame_counters[camera_name] % 5 == 0:
+                run_face_recognition = True
+                print(f"🔧 DEBUG: Running face detection - scheduled frame {self.frame_counters[camera_name]}")
+            
+            if run_face_recognition:
+                print(f"🔧 DEBUG: Running face detection on frame {self.frame_counters[camera_name]}")
+                print(f"🔍 Frame dimensions for face detection: {frame.shape}")
+                face_results = self.face_recognizer.process_frame_faces(frame)
+                
+                # Debug: Show face recognition results
+                print(f"👤 Face Detection for {camera_name}: {len(face_results)} faces detected")
+                if len(face_results) > 0:
+                    print(f"👤 Face Recognition Results for {camera_name}:")
+                    for i, face_result in enumerate(face_results):
+                        print(f"   Face {i+1}: {face_result['person_name']} (confidence: {face_result['confidence']:.2f}, status: {face_result['authorization_status']})")
+                
+                # Check for intruders (unknown faces) - only alert if NO authorized faces present
+                authorized_faces = []
+                intruder_faces = []
+                
+                for face_result in face_results:
+                    if face_result['authorization_status'] == 'authorized':
+                        authorized_faces.append(face_result['person_name'])
+                    elif face_result['authorization_status'] == 'intruder':
+                        intruder_faces.append(face_result)
+                
+                # Only send intruder alert if there are unknown faces AND no authorized faces
+                # This prevents false alarms when authorized personnel are present
+                if len(intruder_faces) > 0 and len(authorized_faces) == 0:
+                    # Save intruder snapshot with timestamp
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    snapshot_filename = f"intruder_{camera_name}_{timestamp}.jpg"
+                    snapshot_path = os.path.join("storage", "snapshots", snapshot_filename)
+                    
+                    # Create directory if it doesn't exist
+                    os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
+                    
+                    # Save the full frame as snapshot
+                    cv2.imwrite(snapshot_path, frame)
+                    
+                    # Send single intruder alert with snapshot (HIGH priority)
+                    self.alert_manager.send_intruder_alert(
+                        person_name="unknown",
+                        camera_id=camera_name,
+                        confidence=0.0,
+                        image_path=snapshot_path
+                    )
+                    
+                    activity = {
+                        'type': 'intruder',
+                        'description': f'INTRUDER DETECTED: Unauthorized person in farm area',
+                        'severity': 'high',
+                        'bbox': None
+                    }
+                    activities.append(activity)
+                    self.alert_count += 1
+                    
+                    print(f"🚨 ALERT [Camera_{camera_name}]: INTRUDER DETECTED: Unauthorized person in farm area")
+                    print(f"📸 Snapshot saved: {snapshot_path}")
+                
+                # Show authorized faces confirmation and handle alerts
+                if len(authorized_faces) > 0:
+                    authorized_persons_present = True  # Set flag for later use
+                    print(f"✅ AUTHORIZED [Camera_{camera_name}]: {', '.join(authorized_faces)} - Access granted")
+                    if len(intruder_faces) > 0:
+                        print(f"ℹ️  INFO: {len(intruder_faces)} unknown faces also detected, but authorized person present - no alerts sent")
+                    else:
+                        print(f"ℹ️  INFO: Only authorized personnel detected - no alerts sent")
+                elif len(intruder_faces) > 0:
+                    print(f"🚨 INTRUDERS ONLY: No authorized personnel detected - intruder alert sent")
+                elif person_count > 0:
+                    # Person detected but no faces found - treat as intruder (face hidden/obscured)
+                    print(f"🚨 INTRUDER: Person detected but face not visible - potential intruder")
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    snapshot_filename = f"intruder_{camera_name}_{timestamp}.jpg"
+                    snapshot_path = os.path.join("storage", "snapshots", snapshot_filename)
+                    
+                    # Create directory if it doesn't exist
+                    os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
+                    
+                    # Save the full frame as snapshot
+                    cv2.imwrite(snapshot_path, frame)
+                    
+                    # Send intruder alert (face not visible = suspicious)
+                    self.alert_manager.send_intruder_alert(
+                        person_name="hidden_face",
+                        camera_id=camera_name,
+                        confidence=0.0,
+                        image_path=snapshot_path
+                    )
+        
+        # Crowd detection (always alert for large groups regardless of authorization)
         if person_count > 3:
-            activities.append({
+            activity = {
                 'type': 'crowd',
                 'description': f'CROWD ALERT: {person_count} persons detected',
                 'severity': 'medium',
                 'bbox': None
-            })
+            }
+            activities.append(activity)
+            self.alert_count += 1
         
         if person_count == 0 and len(bags) > 0:
-            activities.append({
+            # Save abandoned object snapshot
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            snapshot_filename = f"abandoned_object_{camera_name}_{timestamp}.jpg"
+            snapshot_path = os.path.join("storage", "snapshots", snapshot_filename)
+            
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
+            
+            # Save the full frame as snapshot
+            cv2.imwrite(snapshot_path, frame)
+            
+            activity = {
                 'type': 'abandoned_object',
                 'description': f'ABANDONED OBJECT: Unattended bag/item detected',
                 'severity': 'medium',
                 'bbox': bags[0]['bbox']
-            })
+            }
+            activities.append(activity)
+            
+            # Send suspicious activity alert with snapshot
+            self.alert_manager.send_suspicious_activity_alert(
+                activity_type='abandoned_object',
+                camera_id=camera_name,
+                confidence=bags[0]['confidence'],
+                image_path=snapshot_path
+            )
+            self.alert_count += 1
+            print(f"⚠️ WARNING [Camera_{camera_name}]: ABANDONED OBJECT: Unattended bag/item detected")
+            print(f"📸 Object snapshot saved: {snapshot_path}")
         
         # Multi-camera correlation
         if len(detections) > 10:
