@@ -38,40 +38,29 @@ class DatabaseConnection:
     def connect(self):
         """Connect to MongoDB database"""
         try:
-            print(f"🔌 Attempting to connect to MongoDB...")
-            print(f"📍 URL: {MONGODB_URL[:50]}{'...' if len(MONGODB_URL) > 50 else ''}")
+            print(f"🔌 Connecting to MongoDB...")
             
+            # Simple connection for local MongoDB (no SSL needed)
             self._client = MongoClient(
                 MONGODB_URL,
-                serverSelectionTimeoutMS=2000,  # Very short timeout
-                connectTimeoutMS=2000,
-                socketTimeoutMS=5000
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
             )
             
             # Test the connection
             self._client.admin.command('ping')
             self._database = self._client[DATABASE_NAME]
             
-            # Check if this is MongoDB Atlas
-            is_atlas = 'mongodb.net' in MONGODB_URL
-            db_type = "MongoDB Atlas (Cloud)" if is_atlas else "MongoDB Local"
+            # Check if this is MongoDB Atlas or Local
+            is_local = 'localhost' in MONGODB_URL or '127.0.0.1' in MONGODB_URL
+            db_type = "MongoDB Local" if is_local else "MongoDB Atlas (Cloud)"
             
             print(f"✅ Connected to {db_type}: {DATABASE_NAME}")
             self._create_indexes()
             
-        except ConnectionFailure as e:
-            print(f"❌ MongoDB connection failed: {e}")
-            if 'mongodb.net' in MONGODB_URL:
-                print("📝 MongoDB Atlas connection failed. Check:")
-                print("   - Network access settings (IP whitelist)")
-                print("   - Database user credentials")
-                print("   - Connection string format")
-            else:
-                print("📝 Local MongoDB connection failed. Check:")
-                print("   - MongoDB service is running")
-                print("   - Connection string is correct")
-            print("🔄 Falling back to in-memory storage...")
-            # For development, we'll use a fallback approach
+        except Exception as e:
+            print(f"⚠️ MongoDB connection failed: {str(e)[:80]}")
+            print("🔄 Using JSON storage as fallback...")
             self._client = None
             self._database = None
     

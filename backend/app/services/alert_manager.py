@@ -6,12 +6,31 @@ import os
 from datetime import datetime, timedelta
 from collections import defaultdict
 
+# Import database models
+try:
+    from database.models import AlertModel
+    MONGODB_AVAILABLE = True
+except ImportError:
+    MONGODB_AVAILABLE = False
+    print("⚠️ MongoDB models not available, using in-memory storage only")
+
 class AlertManager:
     def __init__(self, socketio):
         self.socketio = socketio
         self.email_service = EmailAlertService()
         self.active_alerts = {}
         self.alert_history = []
+        
+        # Initialize MongoDB alert model
+        if MONGODB_AVAILABLE:
+            try:
+                self.alert_model = AlertModel()
+                print("✅ MongoDB AlertModel initialized")
+            except Exception as e:
+                self.alert_model = None
+                print(f"⚠️ MongoDB AlertModel initialization failed: {e}")
+        else:
+            self.alert_model = None
         
         # Email cooldown settings (to prevent spam)
         self.email_cooldown_minutes = int(os.getenv('ALERT_COOLDOWN_MINUTES', '5'))
@@ -37,7 +56,22 @@ class AlertManager:
         alert_data['timestamp'] = datetime.now().isoformat()
         alert_data['severity'] = self.severity_mapping.get(alert_data['type'], 'medium')
         
-        # Store alert
+        # Store alert in MongoDB
+        if self.alert_model:
+            try:
+                db_alert_id = self.alert_model.create_alert(
+                    camera_id=alert_data.get('camera_id', 'unknown'),
+                    alert_type=alert_data['type'],
+                    message=alert_data.get('description', ''),
+                    severity=alert_data['severity'],
+                    image_path=alert_data.get('image_path')
+                )
+                alert_data['db_id'] = db_alert_id
+                print(f"💾 Alert saved to database: {db_alert_id}")
+            except Exception as e:
+                print(f"⚠️ Failed to save alert to database: {e}")
+        
+        # Store alert in memory
         self.active_alerts[alert_data['id']] = alert_data
         self.alert_history.append(alert_data)
         

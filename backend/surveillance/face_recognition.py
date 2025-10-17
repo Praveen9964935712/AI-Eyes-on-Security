@@ -62,7 +62,7 @@ class LBPHFaceRecognizer:
         if not self.is_trained:
             self.train_from_directory()
     
-    def detect_faces(self, frame: np.ndarray, scale_factor: float = 1.1, min_neighbors: int = 5) -> List[Tuple[int, int, int, int]]:
+    def detect_faces(self, frame: np.ndarray, scale_factor: float = 1.02, min_neighbors: int = 2) -> List[Tuple[int, int, int, int]]:
         """
         Detect faces in frame using Haar cascade
         
@@ -78,14 +78,15 @@ class LBPHFaceRecognizer:
             # Convert to grayscale
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
-            # Detect faces with strict parameters to prevent false positives
+            # Detect faces with VERY strict parameters to reduce false detections
+            # Higher scaleFactor and minNeighbors = fewer false positives
             faces = self.face_cascade.detectMultiScale(
                 gray,
-                scaleFactor=scale_factor,
-                minNeighbors=min_neighbors,
-                minSize=(40, 40),  # Much larger minimum face size - more realistic
-                maxSize=(300, 300),  # Maximum face size to prevent false detections
-                flags=cv2.CASCADE_SCALE_IMAGE  # Additional flag for better detection
+                scaleFactor=1.3,  # Increased from 1.1 (less sensitive, fewer false detections)
+                minNeighbors=8,   # Increased from 5 (requires more evidence)
+                minSize=(60, 60),  # Increased from (15,15) (ignore small faces/noise)
+                maxSize=(400, 400),
+                flags=cv2.CASCADE_SCALE_IMAGE
             )
             
             return [(int(x), int(y), int(w), int(h)) for x, y, w, h in faces]
@@ -265,15 +266,18 @@ class LBPHFaceRecognizer:
                         # Load image
                         image = cv2.imread(str(image_path))
                         if image is None:
+                            logger.warning(f"Image not loaded: {image_path}")
                             continue
                         
                         # Detect faces in image
                         detected_faces = self.detect_faces(image)
-                        
+                        if not detected_faces:
+                            logger.warning(f"No faces detected in: {image_path}")
                         for face_bbox in detected_faces:
                             # Extract face crop
                             face_crop = self.extract_face_crop(image, face_bbox)
                             if face_crop is None:
+                                logger.warning(f"Face crop failed for: {image_path}")
                                 continue
                             
                             # Convert to grayscale

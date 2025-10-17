@@ -354,11 +354,27 @@ app, socketio = create_app()
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("🔍 AI Eyes Security System Starting...")
+    print("� AI Eyes Security - Simple API Server")
     print("=" * 50)
-    print(f"Backend Server: http://localhost:{PORT}")
+    print(f"Server: http://localhost:{PORT}")
     print(f"API Status: http://localhost:{PORT}/api/status")
     print(f"Dashboard: http://localhost:5173 (start frontend separately)")
+    print("=" * 50)
+    
+    # Start camera discovery service
+    try:
+        from app.services.camera_discovery import camera_discovery
+        print("🔍 Camera discovery service initialized")
+        
+        # Only start status monitoring (no auto-scan)
+        # Users can manually scan via API: POST /api/camera/scan
+        camera_discovery.start_status_monitor(interval=30)  # Check status every 30 seconds
+        
+        print("✅ Camera discovery ready (manual scan only)")
+        print("📡 To scan: POST http://localhost:5000/api/camera/scan")
+    except Exception as e:
+        print(f"⚠️ Could not start camera discovery: {e}")
+    
     print("=" * 50)
     
     try:

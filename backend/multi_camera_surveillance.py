@@ -22,6 +22,8 @@ load_dotenv()
 sys.path.append('.')
 from surveillance.detector import YOLOv9Detector
 from surveillance.face_recognition import LBPHFaceRecognizer
+from surveillance.activity_analyzer import SuspiciousActivityAnalyzer, DetectionZone, ActivityType
+from surveillance.tracker import PersonTracker
 from app.services.alert_manager import AlertManager
 
 class MultiCameraAISurveillance:
@@ -49,6 +51,17 @@ class MultiCameraAISurveillance:
         # Frame processing counters for optimization
         self.frame_counters = {}  # Track frame numbers per camera
         
+        # Person tracking for activity analysis
+        self.person_trackers = {}  # Track person movements per camera
+        
+        # Activity analyzers for each camera
+        self.activity_analyzers = {}  # Suspicious activity detection per camera
+        
+        # Face detection memory - tracks last authorized person per camera
+        # Prevents false alerts when authorized person's face is temporarily obscured
+        self.last_authorized_person = {}  # camera_name -> {'names': [list], 'timestamp': datetime, 'frames_since_seen': int}
+        self.max_frames_without_face = 10  # Allow 10 frames (~5 seconds) before alerting on "no face"
+        
         # AI Components - Optimized for ULTRA performance with minimal lag
         self.detector = YOLOv9Detector(
             conf_threshold=0.4,   # Higher threshold for faster processing and less noise
@@ -56,70 +69,145 @@ class MultiCameraAISurveillance:
         )
         
         # Face Recognition for Farm Security
-        self.face_recognizer = LBPHFaceRecognizer(known_faces_dir="data/known_faces")
+        # Use BALANCED confidence threshold (65) for optimal security
+        # Lower value = stricter matching
+        # Threshold 65: Accepts authorized (56-63) but rejects strangers (70+)
+        self.face_recognizer = LBPHFaceRecognizer(
+            known_faces_dir="data/known_faces",
+            confidence_threshold=65.0  # BALANCED: Accepts slight appearance variations
+        )
         print(f"👤 Face Recognition: {'✅ Model trained' if self.face_recognizer.is_trained else '⚠️ Training required'}")
+        print(f"🔒 Recognition Threshold: 65 (BALANCED mode - accommodates lighting/appearance variations)")
+        
+        # Initialize activity analyzers and trackers for each camera
+        self._initialize_activity_detection()
         
         print(f"🔍 Multi-Camera AI Surveillance System Initialized")
         print(f"📹 Found {len(self.camera_urls)} live cameras")
         print(f"🚨 SendGrid Email Alerts: {'✅ Enabled' if self.alert_manager.email_service.enabled else '❌ Disabled'}")
+        print(f"🎯 Activity Detection: Loitering | Zone Intrusion | Running | Fighting | Abandoned Objects")
         
         self.setup_flask_routes()
     
     def auto_detect_cameras(self):
-        """Automatically detect all live IP cameras on your network"""
+        """Automatically detect all live IP cameras using discovery service"""
         print("🔎 Auto-detecting live IP cameras...")
         
-        # Known camera patterns from your dashboard
-        camera_patterns = [
-            "http://192.168.137.254:8080",
-            "http://192.168.137.4:8080",
-            "http://192.168.137.1:8080",
-            "http://192.168.137.2:8080",
-            "http://192.168.137.3:8080",
-        ]
+        cameras = {}
         
-        detected_cameras = {}
+        # Method 1: Try to load from camera discovery service (discovered_cameras collection)
+        try:
+            from app.services.camera_discovery import camera_discovery
+            
+            # Load previously discovered cameras
+            discovered_cameras = camera_discovery.get_cameras()
+            
+            if discovered_cameras:
+                print(f"📂 Found {len(discovered_cameras)} cameras in discovery database")
+                
+                for cam in discovered_cameras:
+                    # Only use online cameras
+                    if cam['status'] == 'online':
+                        camera_name = cam['id']
+                        camera_url = cam['url']
+                        
+                        # Verify camera is still accessible
+                        try:
+                            response = requests.head(camera_url, timeout=2)
+                            if response.status_code in [200, 302]:
+                                cameras[camera_name] = camera_url
+                                print(f"✅ {camera_name}: {camera_url}")
+                        except:
+                            print(f"❌ {camera_name}: {camera_url} (not accessible)")
+            else:
+                print("ℹ️ No cameras in discovery database, checking main cameras collection...")
         
-        for i, base_url in enumerate(camera_patterns):
+        except ImportError:
+            print("⚠️ Camera discovery service not available")
+        
+        # Method 2: Load from main cameras collection (MongoDB)
+        if not cameras:
             try:
-                # Test connection
-                response = requests.get(base_url, timeout=3)
-                if response.status_code == 200:
-                    # Test video stream
-                    video_url = f"{base_url}/video"
-                    cap = cv2.VideoCapture(video_url)
-                    if cap.isOpened():
-                        ret, frame = cap.read()
-                        if ret:
-                            camera_name = f"Camera_{i+1}_{base_url.split('.')[-2]}"
-                            detected_cameras[camera_name] = {
-                                'url': video_url,
-                                'base_url': base_url,
-                                'resolution': frame.shape,
-                                'status': 'online'
-                            }
-                            print(f"✅ Found: {camera_name} - {video_url} ({frame.shape[1]}x{frame.shape[0]})")
-                        cap.release()
+                from database.config import get_database
+                db = get_database()
+                if db is not None:
+                    cameras_collection = db['cameras']
+                    db_cameras = list(cameras_collection.find({'enabled': True}))
+                    
+                    if db_cameras:
+                        print(f"📂 Found {len(db_cameras)} cameras in main database")
+                        
+                        for cam in db_cameras:
+                            camera_name = cam.get('name', cam.get('_id'))
+                            camera_url = cam.get('url')
+                            
+                            if camera_url:
+                                # Verify camera is accessible
+                                try:
+                                    response = requests.head(camera_url, timeout=2)
+                                    if response.status_code in [200, 302]:
+                                        cameras[camera_name] = camera_url
+                                        print(f"✅ {camera_name}: {camera_url}")
+                                except:
+                                    print(f"❌ {camera_name}: {camera_url} (not accessible)")
                     else:
-                        print(f"❌ {base_url} - Video stream not available")
-                else:
-                    print(f"❌ {base_url} - HTTP error {response.status_code}")
+                        print("ℹ️ No enabled cameras in main database")
             except Exception as e:
-                print(f"❌ {base_url} - Connection failed: {str(e)[:50]}...")
+                print(f"⚠️ Error loading from main database: {e}")
         
-        if not detected_cameras:
-            print("⚠️ No cameras detected, using manual configuration...")
-            # Fallback to your known working camera
-            detected_cameras = {
-                "Camera_1_Manual": {
-                    'url': "http://192.168.137.254:8080/video",
-                    'base_url': "http://192.168.137.254:8080",
-                    'resolution': (1080, 1920, 3),
-                    'status': 'online'
-                }
-            }
+        # No fallback - return empty if no cameras discovered
+        if not cameras:
+            print("⚠️ No cameras detected. Please add cameras manually or use the discovery service.")
+            print("📡 To scan: POST http://localhost:5000/api/camera/scan")
         
-        return detected_cameras
+        print(f"✅ Total cameras ready: {len(cameras)}")
+        return cameras
+    
+    def _initialize_activity_detection(self):
+        """Initialize activity detection for suspicious behavior monitoring"""
+        print("\n🎯 Initializing Suspicious Activity Detection...")
+        
+        for camera_name in self.camera_urls.keys():
+            # Create person tracker for each camera
+            self.person_trackers[camera_name] = PersonTracker(
+                tracker_type='KCF',  # Faster than CSRT for real-time
+                max_tracks=20,
+                track_timeout=5.0
+            )
+            
+            # Create activity analyzer for each camera
+            self.activity_analyzers[camera_name] = SuspiciousActivityAnalyzer(
+                loitering_threshold=30.0,      # 30 seconds for loitering
+                abandoned_object_threshold=60.0,  # 60 seconds for abandoned objects
+                speed_threshold=150.0,          # pixels/second for running detection
+                crowd_threshold=5               # 5+ people for crowd
+            )
+            
+            # Add default detection zones (whole frame as monitored zone)
+            # You can customize these zones based on your camera views
+            default_zone = DetectionZone(
+                name=f"{camera_name}_main_area",
+                points=[(0, 0), (1920, 0), (1920, 1080), (0, 1080)],  # Full frame
+                zone_type="monitored",
+                activity_types=[
+                    ActivityType.LOITERING,
+                    ActivityType.ZONE_INTRUSION,
+                    ActivityType.RUNNING,
+                    ActivityType.ABANDONED_OBJECT,
+                    ActivityType.WEAPON_DETECTED
+                ]
+            )
+            self.activity_analyzers[camera_name].add_detection_zone(default_zone)
+            
+            print(f"  ✅ {camera_name}: Tracker + Activity Analyzer initialized")
+        
+        print("✅ Activity Detection System Ready")
+        print("   📍 Monitored Activities:")
+        print("      • Loitering (30+ seconds)")
+        print("      • Zone Intrusion (unauthorized access)")
+        print("      • Running (fast movement)")
+        print("      • Abandoned Objects (60+ seconds)")
+        print("      • Weapon Detection (firearms, knives)")
     
     def setup_flask_routes(self):
         """Setup web interface for multi-camera surveillance"""
@@ -292,6 +380,25 @@ class MultiCameraAISurveillance:
 </html>
             ''', cameras=self.camera_urls, camera_count=len(self.camera_urls))
         
+        @self.app.route('/api/cameras')
+        def api_cameras():
+            """Get list of all cameras with status for dashboard"""
+            cameras = []
+            for camera_name, camera_url in self.camera_urls.items():
+                # Check if camera is currently active/online
+                is_online = camera_name in self.active_cameras
+                
+                cameras.append({
+                    'id': camera_name,
+                    'name': camera_name.replace('_', ' ').title(),
+                    'location': 'Farm Security Zone',
+                    'status': 'online' if is_online else 'offline',
+                    'url': camera_url,
+                    'type': 'farm'
+                })
+            
+            return jsonify(cameras)
+        
         @self.app.route('/api/status')
         def api_status():
             """Get system status"""
@@ -445,27 +552,48 @@ class MultiCameraAISurveillance:
     
     def process_camera_feed(self, camera_name, camera_info):
         """Process individual camera with AI surveillance"""
-        camera_url = camera_info['url']
+        # Handle both string URL and dict format
+        if isinstance(camera_info, str):
+            camera_url = camera_info
+            ai_mode = 'both'  # Default mode
+        else:
+            camera_url = camera_info['url']
+            ai_mode = camera_info.get('ai_mode', 'both')  # Get AI mode from camera config
+            
         print(f"🎯 Starting AI surveillance for {camera_name}: {camera_url}")
+        print(f"   🤖 AI Mode: {ai_mode.upper()}")
+        if ai_mode == 'lbph':
+            print("   👤 Face Recognition ONLY - Alert on unknown persons")
+        elif ai_mode == 'yolov9':
+            print("   ⚠️ Activity Detection ONLY - Monitor suspicious behavior")
+        else:
+            print("   🛡️ Full Protection - Face recognition + Activity detection")
         
         cap = cv2.VideoCapture(camera_url)
         frame_count = 0
         last_fps_time = time.time()
         fps_counter = 0
         
-        # Initialize stats
+        # Initialize stats with AI mode
         self.detection_stats[camera_name] = {
             'total_detections': 0,
             'fps': 0,
-            'start_time': time.time()
+            'start_time': time.time(),
+            'ai_mode': ai_mode
         }
         
         while camera_name in self.active_cameras:
             try:
                 ret, frame = cap.read()
                 if not ret:
-                    print(f"Failed to read from {camera_name}, retrying...")
-                    time.sleep(1)
+                    print(f"Failed to read from {camera_name}, reconnecting...")
+                    cap.release()
+                    time.sleep(2)
+                    # Attempt to reconnect
+                    cap = cv2.VideoCapture(camera_url)
+                    if not cap.isOpened():
+                        print(f"Reconnection failed for {camera_name}, will retry...")
+                        time.sleep(3)
                     continue
                 
                 frame_count += 1
@@ -504,6 +632,9 @@ class MultiCameraAISurveillance:
     def process_frame_ai(self, frame, camera_name, frame_count):
         """AI processing pipeline for each camera - Performance Optimized"""
         
+        # Get AI mode for this camera
+        ai_mode = self.detection_stats.get(camera_name, {}).get('ai_mode', 'both')
+        
         # ULTRA Performance optimization: Skip even more frames to eliminate lag (process every 10th frame)
         if frame_count % 10 != 0:
             # Return cached detection data for skipped frames
@@ -519,26 +650,122 @@ class MultiCameraAISurveillance:
         height, width = frame.shape[:2]
         small_frame = cv2.resize(frame, (int(width * 0.3), int(height * 0.3)))
         
-        # Object Detection on much smaller frame
-        detections = self.detector.detect(small_frame)
+        # === YOLOv9 Object Detection (only if ai_mode is 'yolov9' or 'both') ===
+        detections = []
+        persons = []
+        weapons = []
+        bags = []
         
-        # Scale detection coordinates back to original frame size (adjusted for 0.3 scale)
-        for detection in detections:
-            bbox = detection['bbox']
-            detection['bbox'] = [int(bbox[0] * 3.33), int(bbox[1] * 3.33), 
-                               int(bbox[2] * 3.33), int(bbox[3] * 3.33)]
+        if ai_mode in ['yolov9', 'both']:
+            # Object Detection on much smaller frame
+            detections = self.detector.detect(small_frame)
+            
+            # Scale detection coordinates back to original frame size (adjusted for 0.3 scale)
+            for detection in detections:
+                bbox = detection['bbox']
+                detection['bbox'] = [int(bbox[0] * 3.33), int(bbox[1] * 3.33), 
+                                   int(bbox[2] * 3.33), int(bbox[3] * 3.33)]
+            
+            persons = self.detector.filter_persons(detections)
+            weapons = self.detector.filter_weapons(detections)
+            bags = self.detector.filter_bags(detections)
         
-        persons = self.detector.filter_persons(detections)
-        weapons = self.detector.filter_weapons(detections)
-        bags = self.detector.filter_bags(detections)
-        
+        # Initialize activities list
         activities = []
         
-        # Activity Analysis with SendGrid Email Alerts
+        # === Activity Analysis (only if ai_mode is 'yolov9' or 'both') ===
+        current_time = time.time()
+        
+        if ai_mode in ['yolov9', 'both']:
+            # Update person tracker with detected persons
+            tracker = self.person_trackers.get(camera_name)
+            activity_analyzer = self.activity_analyzers.get(camera_name)
+            
+            if tracker and activity_analyzer and len(persons) > 0:
+                # Update tracker with person detections
+                track_states = tracker.update(frame, persons)
+                
+                # Analyze tracks for suspicious activities
+                suspicious_activities = activity_analyzer.analyze_frame(
+                    detections=detections,
+                    tracks=track_states,
+                    current_time=current_time
+                )
+                
+                # Process detected suspicious activities
+                for sus_activity in suspicious_activities:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    activity_type = sus_activity.activity_type.value
+                    
+                    # Save snapshot for suspicious activity
+                    snapshot_filename = f"{activity_type}_{camera_name}_{timestamp}.jpg"
+                    snapshot_path = os.path.join("storage", "snapshots", snapshot_filename)
+                    os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
+                    cv2.imwrite(snapshot_path, frame)
+                    
+                    # Map activity type to severity
+                    severity_map = {
+                        'loitering': 'medium',
+                        'zone_intrusion': 'high',
+                        'running': 'low',
+                        'fighting': 'high',
+                        'weapon_detected': 'critical',
+                        'abandoned_object': 'medium',
+                        'crowd_formation': 'medium'
+                    }
+                    
+                    activity = {
+                        'type': activity_type,
+                        'description': sus_activity.description,
+                        'severity': severity_map.get(activity_type, 'medium'),
+                        'bbox': None
+                    }
+                    activities.append(activity)
+                    
+                    # Send alerts for specific activity types
+                    if activity_type == 'loitering':
+                        self.alert_manager.send_suspicious_activity_alert(
+                            activity_type='loitering',
+                            camera_id=camera_name,
+                            confidence=sus_activity.confidence,
+                            image_path=snapshot_path
+                        )
+                        self.alert_count += 1
+                        print(f"⚠️ LOITERING [Camera_{camera_name}]: {sus_activity.description}")
+                        print(f"📸 Snapshot saved: {snapshot_path}")
+                        
+                    elif activity_type == 'zone_intrusion':
+                        self.alert_manager.send_suspicious_activity_alert(
+                            activity_type='zone_intrusion',
+                            camera_id=camera_name,
+                            confidence=sus_activity.confidence,
+                            image_path=snapshot_path
+                        )
+                        self.alert_count += 1
+                        print(f"🚨 ZONE INTRUSION [Camera_{camera_name}]: {sus_activity.description}")
+                        print(f"📸 Snapshot saved: {snapshot_path}")
+                        
+                    elif activity_type == 'running':
+                        # Don't send email for running, just log it
+                        print(f"🏃 RUNNING [Camera_{camera_name}]: {sus_activity.description}")
+                        
+                    elif activity_type == 'fighting':
+                        self.alert_manager.send_suspicious_activity_alert(
+                            activity_type='fighting',
+                            camera_id=camera_name,
+                            confidence=sus_activity.confidence,
+                            image_path=snapshot_path
+                        )
+                        self.alert_count += 1
+                        print(f"🚨 FIGHTING [Camera_{camera_name}]: {sus_activity.description}")
+                        print(f"📸 Snapshot saved: {snapshot_path}")
+        
+        # === END: Activity Analysis ===
+        
+        # === Weapon Detection (only if ai_mode is 'yolov9' or 'both') ===
         person_count = len(persons)
         
-        # Suspicious activity detection with email alerts
-        if weapons:
+        if ai_mode in ['yolov9', 'both'] and weapons:
             # Save weapon detection snapshot
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             snapshot_filename = f"weapon_{camera_name}_{timestamp}.jpg"
@@ -569,10 +796,10 @@ class MultiCameraAISurveillance:
             print(f"🚨 CRITICAL ALERT [Camera_{camera_name}]: WEAPON DETECTED: {weapons[0]['class_name']}")
             print(f"📸 Weapon snapshot saved: {snapshot_path}")
         
-        # Face Recognition for Farm Security (run when person detected OR every 5th frame)
+        # === Face Recognition (only if ai_mode is 'lbph' or 'both') ===
         authorized_persons_present = False  # Track if authorized persons are detected
         print(f"🔧 DEBUG: Face recognizer trained: {self.face_recognizer.is_trained}")
-        if self.face_recognizer.is_trained:
+        if ai_mode in ['lbph', 'both'] and self.face_recognizer.is_trained:
             # Initialize frame counter for this camera if not exists
             if camera_name not in self.frame_counters:
                 self.frame_counters[camera_name] = 0
@@ -601,7 +828,7 @@ class MultiCameraAISurveillance:
                     for i, face_result in enumerate(face_results):
                         print(f"   Face {i+1}: {face_result['person_name']} (confidence: {face_result['confidence']:.2f}, status: {face_result['authorization_status']})")
                 
-                # Check for intruders (unknown faces) - only alert if NO authorized faces present
+                # Check for intruders (unknown faces) - ALWAYS ALERT for unauthorized faces
                 authorized_faces = []
                 intruder_faces = []
                 
@@ -611,9 +838,9 @@ class MultiCameraAISurveillance:
                     elif face_result['authorization_status'] == 'intruder':
                         intruder_faces.append(face_result)
                 
-                # Only send intruder alert if there are unknown faces AND no authorized faces
-                # This prevents false alarms when authorized personnel are present
-                if len(intruder_faces) > 0 and len(authorized_faces) == 0:
+                # SECURITY FIX: ALWAYS alert for intruders, even if authorized persons are present
+                # This prevents unauthorized persons from sneaking in with authorized personnel
+                if len(intruder_faces) > 0:
                     # Save intruder snapshot with timestamp
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     snapshot_filename = f"intruder_{camera_name}_{timestamp}.jpg"
@@ -625,7 +852,12 @@ class MultiCameraAISurveillance:
                     # Save the full frame as snapshot
                     cv2.imwrite(snapshot_path, frame)
                     
-                    # Send single intruder alert with snapshot (HIGH priority)
+                    # Send intruder alert with snapshot (HIGH priority)
+                    # Alert message includes whether authorized persons are also present
+                    alert_message = f"INTRUDER DETECTED: {len(intruder_faces)} unauthorized person(s) detected"
+                    if len(authorized_faces) > 0:
+                        alert_message += f" (Authorized personnel also present: {', '.join(set(authorized_faces))})"
+                    
                     self.alert_manager.send_intruder_alert(
                         person_name="unknown",
                         camera_id=camera_name,
@@ -635,46 +867,97 @@ class MultiCameraAISurveillance:
                     
                     activity = {
                         'type': 'intruder',
-                        'description': f'INTRUDER DETECTED: Unauthorized person in farm area',
+                        'description': alert_message,
                         'severity': 'high',
                         'bbox': None
                     }
                     activities.append(activity)
                     self.alert_count += 1
                     
-                    print(f"🚨 ALERT [Camera_{camera_name}]: INTRUDER DETECTED: Unauthorized person in farm area")
+                    print(f"🚨 ALERT [Camera_{camera_name}]: {alert_message}")
                     print(f"📸 Snapshot saved: {snapshot_path}")
                 
-                # Show authorized faces confirmation and handle alerts
+                # Show authorized faces confirmation
                 if len(authorized_faces) > 0:
                     authorized_persons_present = True  # Set flag for later use
+                    
+                    # Remember ALL authorized persons detected for this camera
+                    self.last_authorized_person[camera_name] = {
+                        'names': authorized_faces,  # Remember ALL authorized persons (manager_prajwal, owner_rajasekhar, farmer_Basava)
+                        'timestamp': datetime.now(),
+                        'frames_since_seen': 0
+                    }
+                    
                     print(f"✅ AUTHORIZED [Camera_{camera_name}]: {', '.join(authorized_faces)} - Access granted")
                     if len(intruder_faces) > 0:
-                        print(f"ℹ️  INFO: {len(intruder_faces)} unknown faces also detected, but authorized person present - no alerts sent")
+                        print(f"⚠️  SECURITY WARNING: {len(intruder_faces)} INTRUDER(S) detected alongside authorized personnel - ALERT SENT")
                     else:
-                        print(f"ℹ️  INFO: Only authorized personnel detected - no alerts sent")
+                        print(f"ℹ️  INFO: Only authorized personnel detected - no alerts")
                 elif len(intruder_faces) > 0:
-                    print(f"🚨 INTRUDERS ONLY: No authorized personnel detected - intruder alert sent")
+                    # Check if intruder might be authorized person with poor frame quality
+                    likely_same_person = False
+                    
+                    if camera_name in self.last_authorized_person:
+                        # If we recently saw authorized person AND intruder confidence is close to threshold
+                        # it might just be a poor quality frame of the same authorized person
+                        last_auth = self.last_authorized_person[camera_name]
+                        for intruder in intruder_faces:
+                            # If confidence is within 5 points of threshold (65-70), might be same person
+                            if intruder['confidence'] <= 70:  # Close to threshold
+                                if last_auth['frames_since_seen'] <= 3:  # Seen very recently (within 3 frames)
+                                    likely_same_person = True
+                                    last_auth['frames_since_seen'] += 1
+                                    persons_str = ', '.join(last_auth['names'])
+                                    print(f"⚠️  WARNING: Poor quality frame detected (confidence: {intruder['confidence']:.2f}), likely {persons_str} - grace period (frame {last_auth['frames_since_seen']}/3)")
+                                    break
+                    
+                    if not likely_same_person:
+                        print(f"🚨 INTRUDERS ONLY: No authorized personnel detected - intruder alert sent")
+                        # Clear last authorized person memory (real intruder detected)
+                        if camera_name in self.last_authorized_person:
+                            del self.last_authorized_person[camera_name]
                 elif person_count > 0:
-                    # Person detected but no faces found - treat as intruder (face hidden/obscured)
-                    print(f"🚨 INTRUDER: Person detected but face not visible - potential intruder")
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    snapshot_filename = f"intruder_{camera_name}_{timestamp}.jpg"
-                    snapshot_path = os.path.join("storage", "snapshots", snapshot_filename)
+                    # Person detected but no faces found - check if we recently saw authorized person
+                    recently_authorized = False
+                    has_previous_memory = camera_name in self.last_authorized_person
                     
-                    # Create directory if it doesn't exist
-                    os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
-                    
-                    # Save the full frame as snapshot
-                    cv2.imwrite(snapshot_path, frame)
-                    
-                    # Send intruder alert (face not visible = suspicious)
-                    self.alert_manager.send_intruder_alert(
-                        person_name="hidden_face",
-                        camera_id=camera_name,
-                        confidence=0.0,
-                        image_path=snapshot_path
-                    )
+                    if has_previous_memory:
+                        last_auth = self.last_authorized_person[camera_name]
+                        last_auth['frames_since_seen'] += 1
+                        
+                        # If authorized person seen within last 10 frames (~5 seconds), don't alert
+                        if last_auth['frames_since_seen'] <= self.max_frames_without_face:
+                            recently_authorized = True
+                            # Show ALL authorized persons who were recently seen
+                            persons_str = ', '.join(last_auth['names'])
+                            print(f"ℹ️  INFO: {persons_str} face(s) temporarily not visible (frame {last_auth['frames_since_seen']}/{self.max_frames_without_face}) - no alert")
+                        else:
+                            # Too many frames without seeing face, forget this person
+                            print(f"🚨 INTRUDER: Person detected but face not visible for {self.max_frames_without_face}+ frames - potential intruder")
+                            del self.last_authorized_person[camera_name]
+                            
+                            # Send intruder alert (person was authorized but face hidden too long)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            snapshot_filename = f"intruder_{camera_name}_{timestamp}.jpg"
+                            snapshot_path = os.path.join("storage", "snapshots", snapshot_filename)
+                            
+                            # Create directory if it doesn't exist
+                            os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
+                            
+                            # Save the full frame as snapshot
+                            cv2.imwrite(snapshot_path, frame)
+                            
+                            # Send intruder alert (face not visible = suspicious)
+                            self.alert_manager.send_intruder_alert(
+                                person_name="hidden_face",
+                                camera_id=camera_name,
+                                confidence=0.0,
+                                image_path=snapshot_path
+                            )
+                    else:
+                        # No previous memory - face detection will handle this on next frame
+                        # Don't alert immediately, give face detection a chance to work
+                        print(f"ℹ️  INFO: Person detected, waiting for face detection (no previous authorization data)")
         
         # Crowd detection (always alert for large groups regardless of authorization)
         if person_count > 3:

@@ -29,7 +29,8 @@ export default function LiveStreams({ cameras: propCameras, onRefreshCameras }: 
     url: '',
     type: 'farm' as 'farm' | 'bank',
     username: '',
-    password: ''
+    password: '',
+    ai_mode: 'both' as 'lbph' | 'yolov9' | 'both'
   });
 
   // Use only prop cameras (from API), no mock data
@@ -47,18 +48,34 @@ export default function LiveStreams({ cameras: propCameras, onRefreshCameras }: 
 
     setIsSubmitting(true);
     try {
+      // Ensure URL has /video endpoint for IP Webcam
+      let cameraUrl = newCamera.url.trim();
+      
+      // Convert https to http (IP Webcam uses http)
+      if (cameraUrl.startsWith('https://')) {
+        cameraUrl = cameraUrl.replace('https://', 'http://');
+      }
+      
+      // Add /video if not present
+      if (!cameraUrl.includes('/video') && !cameraUrl.includes('/videofeed')) {
+        cameraUrl = cameraUrl.endsWith('/') ? cameraUrl + 'video' : cameraUrl + '/video';
+      }
+      
       // In a real system, this would make an API call to add the camera
       const response = await fetch('http://localhost:5000/api/camera/add', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newCamera)
+        body: JSON.stringify({
+          ...newCamera,
+          url: cameraUrl  // Use the fixed URL
+        })
       });
 
       if (response.ok) {
         await response.json(); // Parse response to ensure it's valid
-        alert(`Camera "${newCamera.name}" added successfully!`);
+        alert(`Camera "${newCamera.name}" added successfully!\nURL: ${cameraUrl}`);
         setShowAddCameraModal(false);
         setNewCamera({
           name: '',
@@ -66,7 +83,8 @@ export default function LiveStreams({ cameras: propCameras, onRefreshCameras }: 
           url: '',
           type: 'farm',
           username: '',
-          password: ''
+          password: '',
+          ai_mode: 'both'
         });
         // Refresh the camera list to show the new camera immediately
         if (onRefreshCameras) {
@@ -92,7 +110,8 @@ export default function LiveStreams({ cameras: propCameras, onRefreshCameras }: 
       url: '',
       type: 'farm',
       username: '',
-      password: ''
+      password: '',
+      ai_mode: 'both'
     });
   };
 
@@ -289,6 +308,26 @@ export default function LiveStreams({ cameras: propCameras, onRefreshCameras }: 
                     <option value="farm">Farm Security</option>
                     <option value="bank">Bank Security</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    AI Detection Mode <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={newCamera.ai_mode}
+                    onChange={(e) => setNewCamera({...newCamera, ai_mode: e.target.value as 'lbph' | 'yolov9' | 'both'})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="both">Both (Face Recognition + Activity Detection)</option>
+                    <option value="lbph">LBPH Only (Face Recognition - Banks/Restricted Areas)</option>
+                    <option value="yolov9">YOLOv9 Only (Suspicious Activity Detection)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {newCamera.ai_mode === 'lbph' && '🔐 Only authorized persons allowed. Alerts for unknown faces.'}
+                    {newCamera.ai_mode === 'yolov9' && '⚠️ Detects loitering, running, weapons, masks, intrusion.'}
+                    {newCamera.ai_mode === 'both' && '🛡️ Full protection: Face recognition + Activity monitoring.'}
+                  </p>
                 </div>
 
                 <div>

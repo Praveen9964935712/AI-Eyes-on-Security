@@ -10,62 +10,53 @@ except ImportError:
     print("Warning: CameraService not available")
     camera_service = None
 
+# Import camera discovery service
+try:
+    from app.services.camera_discovery import camera_discovery
+except ImportError:
+    print("Warning: CameraDiscovery not available")
+    camera_discovery = None
+
 camera_bp = Blueprint('camera', __name__)
 
 @camera_bp.route('/list', methods=['GET'])
 def get_cameras():
-    """Get list of all cameras"""
-    cameras = [
-        {
-            'id': 1,
-            'name': 'Farm Gate A',
-            'location': 'Main Entrance',
-            'status': 'online',
-            'url': 'http://192.168.1.100:8080/video',
-            'type': 'farm'
-        },
-        {
-            'id': 2,
-            'name': 'Bank Main Hall',
-            'location': 'Customer Area', 
-            'status': 'online',
-            'url': 'http://192.168.1.101:8080/video',
-            'type': 'bank'
-        },
-        {
-            'id': 3,
-            'name': 'Farm Perimeter',
-            'location': 'North Side',
-            'status': 'online',
-            'url': 'http://192.168.1.102:8080/video',
-            'type': 'farm'
-        },
-        {
-            'id': 4,
-            'name': 'Bank ATM Area',
-            'location': 'ATM Zone',
-            'status': 'online',
-            'url': 'http://192.168.1.103:8080/video',
-            'type': 'bank'
-        },
-        {
-            'id': 5,
-            'name': 'Farm Storage',
-            'location': 'Equipment Barn',
-            'status': 'offline',
-            'url': 'http://192.168.1.104:8080/video',
-            'type': 'farm'
-        },
-        {
-            'id': 6,
-            'name': 'Bank Vault Area',
-            'location': 'Restricted Zone',
-            'status': 'online',
-            'url': 'http://192.168.1.105:8080/video',
-            'type': 'bank'
-        }
-    ]
-    return jsonify(cameras)
+    """Get list of all discovered cameras with real-time status"""
+    try:
+        # First, try to get cameras from discovery service
+        if camera_discovery:
+            cameras = camera_discovery.get_cameras()
+            
+            # Format cameras for frontend
+            formatted_cameras = []
+            for cam in cameras:
+                formatted_cameras.append({
+                    'id': cam['id'],
+                    'name': cam['name'],
+                    'ip': cam['ip'],
+                    'port': cam['port'],
+                    'url': cam['url'],
+                    'type': cam['type'],
+                    'status': cam['status'],
+                    'last_seen': cam.get('last_seen', ''),
+                    'discovered_at': cam.get('discovered_at', ''),
+                    'manual': cam.get('manual', False)
+                })
+            
+            print(f"📹 Returning {len(formatted_cameras)} discovered cameras")
+            return jsonify(formatted_cameras)
+        
+        # Fallback: Try to get cameras from surveillance system (port 5002)
+        import requests
+        response = requests.get('http://localhost:5002/api/cameras', timeout=2)
+        if response.status_code == 200:
+            return jsonify(response.json())
+            
+    except Exception as e:
+        print(f"Could not fetch cameras: {e}")
+    
+    # Final fallback: Return empty list
+    return jsonify([])
 
 @camera_bp.route('/stream/<int:camera_id>')
 def video_stream(camera_id):
@@ -112,21 +103,71 @@ def toggle_recording(camera_id):
 
 @camera_bp.route('/add', methods=['POST'])
 def add_camera():
-    """Add new camera to the system"""
+    """Manually add a camera to the system"""
     data = request.get_json()
-    required_fields = ['name', 'location', 'url', 'type']
     
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing required fields'}), 400
+    if not data or 'name' not in data or 'url' not in data:
+        return jsonify({'error': 'Missing required fields (name, url)'}), 400
     
-    # Here you would add camera to database
-    new_camera = {
-        'id': 7,  # This would be auto-generated
-        'name': data['name'],
-        'location': data['location'],
-        'url': data['url'],
-        'type': data['type'],
-        'status': 'online'
-    }
+    if camera_discovery:
+        camera = camera_discovery.add_manual_camera(
+            name=data['name'],
+            url=data['url'],
+            camera_type=data.get('type', 'manual')
+        )
+        
+        if camera:
+            return jsonify({
+                'message': 'Camera added successfully',
+                'camera': camera
+            })
     
-    return jsonify({'message': 'Camera added successfully', 'camera': new_camera})
+    return jsonify({'error': 'Failed to add camera'}), 500
+
+@camera_bp.route('/remove/<camera_id>', methods=['DELETE'])
+def remove_camera(camera_id):
+    """Remove a camera from the system"""
+    if camera_discovery:
+        camera_discovery.remove_camera(camera_id)
+        return jsonify({'message': 'Camera removed successfully'})
+    
+    return jsonify({'error': 'Camera discovery not available'}), 500
+
+@camera_bp.route('/scan', methods=['POST'])
+def scan_network():
+    """Trigger network scan for cameras"""
+    if camera_discovery:
+        # Start scan in background
+        import threading
+        thread = threading.Thread(target=camera_discovery.scan_network)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'message': 'Network scan started',
+            'status': 'scanning'
+        })
+    
+    return jsonify({'error': 'Camera discovery not available'}), 500
+
+@camera_bp.route('/status', methods=['GET'])
+def get_camera_status():
+    """Get camera discovery service status"""
+    if camera_discovery:
+        cameras = camera_discovery.get_cameras()
+        online_count = len([c for c in cameras if c['status'] == 'online'])
+        offline_count = len([c for c in cameras if c['status'] == 'offline'])
+        
+        return jsonify({
+            'total_cameras': len(cameras),
+            'online': online_count,
+            'offline': offline_count,
+            'scanning': camera_discovery.scanning
+        })
+    
+    return jsonify({
+        'total_cameras': 0,
+        'online': 0,
+        'offline': 0,
+        'scanning': False
+    })
