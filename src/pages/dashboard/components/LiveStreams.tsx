@@ -30,7 +30,7 @@ export default function LiveStreams({ cameras: propCameras, onRefreshCameras }: 
     type: 'farm' as 'farm' | 'bank',
     username: '',
     password: '',
-    ai_mode: 'both' as 'lbph' | 'yolov9' | 'both'
+    ai_mode: 'both' as 'face_recognition' | 'yolov9' | 'both'
   });
 
   // Use only prop cameras (from API), no mock data
@@ -62,7 +62,7 @@ export default function LiveStreams({ cameras: propCameras, onRefreshCameras }: 
       }
       
       // In a real system, this would make an API call to add the camera
-      const response = await fetch('http://localhost:5000/api/camera/add', {
+      const response = await fetch('http://localhost:8000/api/camera/add', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -117,7 +117,7 @@ export default function LiveStreams({ cameras: propCameras, onRefreshCameras }: 
 
   const handleTakeSnapshot = async (cameraId: string | number) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/camera/${cameraId}/snapshot`, {
+      const response = await fetch(`http://localhost:8000/api/camera/${cameraId}/snapshot`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -316,17 +316,17 @@ export default function LiveStreams({ cameras: propCameras, onRefreshCameras }: 
                   </label>
                   <select
                     value={newCamera.ai_mode}
-                    onChange={(e) => setNewCamera({...newCamera, ai_mode: e.target.value as 'lbph' | 'yolov9' | 'both'})}
+                    onChange={(e) => setNewCamera({...newCamera, ai_mode: e.target.value as 'face_recognition' | 'yolov9' | 'both'})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="both">Both (Face Recognition + Activity Detection)</option>
-                    <option value="lbph">LBPH Only (Face Recognition - Banks/Restricted Areas)</option>
+                    <option value="both">Both (MobileNetV2 Face + Activity Detection)</option>
+                    <option value="face_recognition">Face Recognition Only (MobileNetV2 - Banks/Restricted)</option>
                     <option value="yolov9">YOLOv9 Only (Suspicious Activity Detection)</option>
                   </select>
                   <p className="text-xs text-gray-500 mt-1">
-                    {newCamera.ai_mode === 'lbph' && '🔐 Only authorized persons allowed. Alerts for unknown faces.'}
+                    {newCamera.ai_mode === 'face_recognition' && '🔐 Only authorized persons allowed. Alerts for unknown faces.'}
                     {newCamera.ai_mode === 'yolov9' && '⚠️ Detects loitering, running, weapons, masks, intrusion.'}
-                    {newCamera.ai_mode === 'both' && '🛡️ Full protection: Face recognition + Activity monitoring.'}
+                    {newCamera.ai_mode === 'both' && '🛡️ Full protection: MobileNetV2 face recognition + Activity monitoring.'}
                   </p>
                 </div>
 

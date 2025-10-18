@@ -52,11 +52,11 @@ export const useApi = (): UseApiReturn => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  const API_BASE_URL = 'http://localhost:5000/api';
+  const API_BASE_URL = 'http://localhost:8000/api';
 
   useEffect(() => {
     // Initialize socket connection
-    const socketInstance = io('http://localhost:5000');
+    const socketInstance = io('http://localhost:8000');
     
     socketInstance.on('connect', () => {
       console.log('Connected to server');

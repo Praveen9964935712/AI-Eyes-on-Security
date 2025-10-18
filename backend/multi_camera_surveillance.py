@@ -21,7 +21,7 @@ load_dotenv()
 
 sys.path.append('.')
 from surveillance.detector import YOLOv9Detector
-from surveillance.face_recognition import LBPHFaceRecognizer
+from surveillance.efficientnet_face_recognition import EfficientNetFaceRecognizer
 from surveillance.activity_analyzer import SuspiciousActivityAnalyzer, DetectionZone, ActivityType
 from surveillance.tracker import PersonTracker
 from app.services.alert_manager import AlertManager
@@ -68,16 +68,17 @@ class MultiCameraAISurveillance:
             device='cpu'          # Ensure CPU usage for stability
         )
         
-        # Face Recognition for Farm Security
-        # Use BALANCED confidence threshold (65) for optimal security
-        # Lower value = stricter matching
-        # Threshold 65: Accepts authorized (56-63) but rejects strangers (70+)
-        self.face_recognizer = LBPHFaceRecognizer(
-            known_faces_dir="data/known_faces",
-            confidence_threshold=65.0  # BALANCED: Accepts slight appearance variations
+        # Face Recognition - EfficientNet B7 Model
+        # Uses advanced deep learning for superior accuracy
+        # Confidence threshold: 0.50 (50% confidence required for identification)
+        self.face_recognizer = EfficientNetFaceRecognizer(
+            confidence_threshold=0.50  # 50% confidence threshold for balance
         )
-        print(f"👤 Face Recognition: {'✅ Model trained' if self.face_recognizer.is_trained else '⚠️ Training required'}")
-        print(f"🔒 Recognition Threshold: 65 (BALANCED mode - accommodates lighting/appearance variations)")
+        print(f"👤 Face Recognition: {'✅ EfficientNet B7 Model Loaded' if self.face_recognizer.is_trained else '⚠️ Model not found'}")
+        print(f"🔒 Recognition Model: EfficientNet B7 with MediaPipe Face Detection")
+        if self.face_recognizer.is_trained:
+            authorized = self.face_recognizer.get_authorized_persons()
+            print(f"✅ Authorized Persons: {', '.join(authorized)}")
         
         # Initialize activity analyzers and trackers for each camera
         self._initialize_activity_detection()
@@ -562,12 +563,12 @@ class MultiCameraAISurveillance:
             
         print(f"🎯 Starting AI surveillance for {camera_name}: {camera_url}")
         print(f"   🤖 AI Mode: {ai_mode.upper()}")
-        if ai_mode == 'lbph':
-            print("   👤 Face Recognition ONLY - Alert on unknown persons")
+        if ai_mode == 'face_recognition' or ai_mode == 'lbph':  # Support legacy 'lbph' config
+            print("   👤 Face Recognition ONLY (EfficientNet B7) - Alert on unknown persons")
         elif ai_mode == 'yolov9':
             print("   ⚠️ Activity Detection ONLY - Monitor suspicious behavior")
         else:
-            print("   🛡️ Full Protection - Face recognition + Activity detection")
+            print("   🛡️ Full Protection - Face recognition (EfficientNet) + Activity detection")
         
         cap = cv2.VideoCapture(camera_url)
         frame_count = 0
@@ -796,10 +797,10 @@ class MultiCameraAISurveillance:
             print(f"🚨 CRITICAL ALERT [Camera_{camera_name}]: WEAPON DETECTED: {weapons[0]['class_name']}")
             print(f"📸 Weapon snapshot saved: {snapshot_path}")
         
-        # === Face Recognition (only if ai_mode is 'lbph' or 'both') ===
+        # === Face Recognition (EfficientNet B7 - supports legacy 'lbph' mode config) ===
         authorized_persons_present = False  # Track if authorized persons are detected
         print(f"🔧 DEBUG: Face recognizer trained: {self.face_recognizer.is_trained}")
-        if ai_mode in ['lbph', 'both'] and self.face_recognizer.is_trained:
+        if ai_mode in ['lbph', 'face_recognition', 'both'] and self.face_recognizer.is_trained:
             # Initialize frame counter for this camera if not exists
             if camera_name not in self.frame_counters:
                 self.frame_counters[camera_name] = 0
@@ -819,7 +820,19 @@ class MultiCameraAISurveillance:
             if run_face_recognition:
                 print(f"🔧 DEBUG: Running face detection on frame {self.frame_counters[camera_name]}")
                 print(f"🔍 Frame dimensions for face detection: {frame.shape}")
-                face_results = self.face_recognizer.process_frame_faces(frame)
+                
+                # Use EfficientNet face recognition
+                raw_face_results = self.face_recognizer.recognize_faces(frame)
+                
+                # Convert to expected format
+                face_results = []
+                for result in raw_face_results:
+                    face_results.append({
+                        'person_name': result['name'],
+                        'confidence': result['confidence'],
+                        'authorization_status': 'authorized' if result['is_authorized'] else 'intruder',
+                        'bbox': result['bbox']
+                    })
                 
                 # Debug: Show face recognition results
                 print(f"👤 Face Detection for {camera_name}: {len(face_results)} faces detected")
@@ -1161,7 +1174,7 @@ class MultiCameraAISurveillance:
             self.stop_camera_surveillance(camera_name)
         print("✅ All camera surveillance stopped")
     
-    def run(self, host='0.0.0.0', port=5002):
+    def run(self, host='0.0.0.0', port=8000):
         """Run the multi-camera surveillance system"""
         print(f"🌐 Multi-Camera Surveillance Dashboard: http://{host}:{port}")
         self.app.run(host=host, port=port, debug=False, threaded=True)

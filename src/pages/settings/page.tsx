@@ -49,7 +49,7 @@ export default function Settings() {
   // AI Settings State
   const [aiSettings, setAiSettings] = useState({
     faceRecognition: true,
-    faceRecognitionModel: 'LBPH',
+    faceRecognitionModel: 'MobileNetV2',
     faceRecognitionThreshold: '80',
     objectDetection: true,
     objectDetectionModel: 'YOLOv9',
@@ -511,9 +511,9 @@ export default function Settings() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm pr-8"
                 disabled={!aiSettings.faceRecognition}
               >
-                <option value="LBPH">LBPH (Local Binary Pattern)</option>
-                <option value="Eigenfaces">Eigenfaces</option>
-                <option value="Fisherfaces">Fisherfaces</option>
+                <option value="MobileNetV2">MobileNetV2 (High Accuracy)</option>
+                <option value="EfficientNet B7">EfficientNet B7 (Advanced Deep Learning)</option>
+                <option value="FaceNet">FaceNet (Alternative)</option>
                 <option value="DeepFace">DeepFace Neural Network</option>
               </select>
             </div>

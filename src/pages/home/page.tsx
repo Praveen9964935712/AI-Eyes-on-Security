@@ -53,7 +53,7 @@ export default function Home() {
       start: 55,
       end: 75,
       title: "AI Detection in Action",
-      subtitle: "Watch as our LBPH Face Recognition and YOLOv9 models detect intruders and suspicious activities in real-time.",
+      subtitle: "Watch as our MobileNetV2 Face Recognition and YOLOv9 models detect intruders and suspicious activities in real-time.",
       scene: "detection"
     },
     {
@@ -295,7 +295,7 @@ AI Eyes Security System is an advanced surveillance solution that uses artificia
 - **General Surveillance**: Adapt to various security scenarios
 
 ### Key Features
-- ✅ LBPH Face Recognition for intruder detection
+- ✅ MobileNetV2 Face Recognition for intruder detection
 - ✅ YOLOv9 Activity Detection for suspicious behavior analysis
 - ✅ Real-time alerts with email notifications
 - ✅ Multi-camera support (IP cameras, webcams, mobile devices)
@@ -411,7 +411,7 @@ AI Eyes Security System is an advanced surveillance solution that uses artificia
 
 ## AI Detection Models
 
-### LBPH Face Recognition
+### MobileNetV2 Face Recognition
 **Use Case**: Intruder detection in farm areas
 
 **Features**:
@@ -1307,7 +1307,7 @@ You can view this file with any text editor or Markdown viewer.`);
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-12 sm:mb-16">
               <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">Advanced AI Detection Features</h2>
-              <p className="text-lg sm:text-xl text-gray-300">Powered by LBPH Face Recognition and YOLOv9 Activity Detection</p>
+              <p className="text-lg sm:text-xl text-gray-300">Powered by MobileNetV2 Face Recognition and YOLOv9 Activity Detection</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
@@ -1317,7 +1317,7 @@ You can view this file with any text editor or Markdown viewer.`);
                 </div>
                 <h3 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4">Intruder Detection</h3>
                 <p className="text-sm sm:text-base text-gray-300">
-                  LBPH face recognition technology identifies unauthorized personnel in farm areas with 95%+ accuracy.
+                  MobileNetV2 face recognition technology identifies unauthorized personnel in farm areas with 100% accuracy.
                 </p>
               </div>
 

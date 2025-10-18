@@ -22,7 +22,7 @@ const ProtectedCameraManager: React.FC<ProtectedCameraManagerProps> = ({ onClose
     password: ''
   });
 
-  const API_BASE_URL = 'http://localhost:5000/api/v2';
+  const API_BASE_URL = 'http://localhost:8000/api/v2';
 
   const handleLogin = async () => {
     try {

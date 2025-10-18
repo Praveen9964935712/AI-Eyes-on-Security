@@ -453,7 +453,7 @@ export default function LogsTable({ logs, onRefresh }: LogsTableProps) {
                       <div className="flex justify-between">
                         <span className="text-gray-600">Detection Model:</span>
                         <span className="text-gray-900">
-                          {selectedLog.event.includes('Unauthorized') ? 'LBPH Face Recognition' : 'YOLOv9 Activity Detection'}
+                          {selectedLog.event.includes('Unauthorized') ? 'EfficientNet B7 Face Recognition' : 'YOLOv9 Activity Detection'}
                         </span>
                       </div>
                       <div className="flex justify-between">
