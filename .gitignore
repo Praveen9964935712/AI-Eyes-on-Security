@@ -59,6 +59,11 @@ coverage/
 *.pt
 *.pth
 *.onnx
+*.xml
+*.yml
+*.h5
+*.pb
+*.tflite
 
 # Database
 *.db
